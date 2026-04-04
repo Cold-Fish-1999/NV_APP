@@ -7,7 +7,7 @@ import {
   buildBaseContext,
   buildFullContext,
   buildSystemPrompt,
-  needsDeepAnalysis,
+  analyzeDeepAnalysisNeed,
 } from "@/lib/chatContext";
 import { normalizeKeywords } from "@/lib/symptomTaxonomy";
 
@@ -19,7 +19,7 @@ const MAX_CHAT_IMAGES = 5;
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const LAYER1_MODEL = "claude-haiku-4-5-20251001";
-const LAYER2_MODEL = "claude-sonnet-4-6-20250514";
+const LAYER2_MODEL = "claude-sonnet-4-6";
 
 // ── Anthropic types ──────────────────────────────────────────────
 
@@ -413,26 +413,51 @@ export async function POST(request: Request) {
     return msgs;
   };
 
-  // ── Layer 1: Haiku 4.5 (always runs) ──────────────────────────
+  // ── Routing: decide Layer1 vs Layer2 before calling ────────────
   let reply = "";
   let dailyLogUpdated = false;
   let deepAnalysis = false;
+
+  const routing = analyzeDeepAnalysisNeed({
+    message: text,
+    riskFlags: ctx.riskFlags,
+    imageCount: urls.length,
+    hasEmptyText: text === "(空)" || text.trim().length === 0,
+  });
+  console.info("[chat][routing]", JSON.stringify({
+    requestId, score: routing.score, escalate: routing.shouldEscalate, reasons: routing.reasons,
+  }));
+
+  const useLayer2 = routing.shouldEscalate;
+  if (useLayer2) deepAnalysis = true;
+
+  const selectedModel = useLayer2 ? LAYER2_MODEL : LAYER1_MODEL;
+  const selectedContext = useLayer2
+    ? buildSystemPrompt(buildFullContext(baseContext, {
+        monthlySummary: ctx.summaryMap["monthly"] ?? null,
+        quarterlySummary: ctx.summaryMap["quarterly"] ?? null,
+        biannualSummary: ctx.summaryMap["biannual"] ?? null,
+        docsSummary: ctx.docsSummary,
+      }))
+    : buildSystemPrompt(baseContext);
+  const selectedMaxTokens = useLayer2 ? 2048 : 1024;
 
   try {
     let currentMessages = buildMessages(userContentBlocks);
     let maxTurns = 2;
 
-    const layer1Start = Date.now();
+    const llmStart = Date.now();
     while (maxTurns-- > 0) {
       const resp = await callAnthropic({
-        model: LAYER1_MODEL,
-        system: buildSystemPrompt(baseContext),
+        model: selectedModel,
+        system: selectedContext,
         messages: currentMessages,
         tools: [LOG_SYMPTOM_TOOL],
-        max_tokens: 1024,
+        max_tokens: selectedMaxTokens,
+        ...(useLayer2 ? { temperature: 0 } : {}),
       });
 
-      console.log("[chat] layer1 response:", JSON.stringify({
+      console.log(`[chat] ${useLayer2 ? "layer2" : "layer1"} response:`, JSON.stringify({
         stop_reason: resp.stop_reason,
         blocks: resp.content.map((b) =>
           b.type === "text"
@@ -443,7 +468,7 @@ export async function POST(request: Request) {
         ),
       }));
 
-      // ── Path B: tool_use → log symptom ──
+      // ── tool_use → log symptom ──
       if (resp.stop_reason === "tool_use") {
         const toolBlocks = resp.content.filter(
           (b): b is ContentBlock & { type: "tool_use" } => b.type === "tool_use"
@@ -522,36 +547,10 @@ export async function POST(request: Request) {
         continue;
       }
 
-      // ── Path A / B text reply ──
       reply = extractText(resp.content);
       break;
     }
-    mark("layer1", layer1Start);
-
-    // ── Check whether to escalate to Layer 2 (deep analysis) ────
-    if (needsDeepAnalysis(text, ctx.riskFlags)) {
-      deepAnalysis = true;
-
-      const fullContext = buildFullContext(baseContext, {
-        monthlySummary: ctx.summaryMap["monthly"] ?? null,
-        quarterlySummary: ctx.summaryMap["quarterly"] ?? null,
-        biannualSummary: ctx.summaryMap["biannual"] ?? null,
-        docsSummary: ctx.docsSummary,
-      });
-
-      const layer2Start = Date.now();
-      const deepResp = await callAnthropic({
-        model: LAYER2_MODEL,
-        system: buildSystemPrompt(fullContext),
-        messages: buildMessages(userContentBlocks),
-        max_tokens: 2048,
-        temperature: 0,
-      });
-      mark("layer2", layer2Start);
-
-      const deepText = extractText(deepResp.content);
-      if (deepText) reply = deepText;
-    }
+    mark(useLayer2 ? "layer2" : "layer1", llmStart);
 
     if (!reply) reply = "抱歉，我暂时无法回复。";
   } catch (e) {
@@ -575,7 +574,7 @@ export async function POST(request: Request) {
   flushTiming("ok");
 
   return NextResponse.json(
-    { reply, dailyLogUpdated, deepAnalysis },
+    { reply, dailyLogUpdated, deepAnalysis, routingScore: routing?.score, routingReasons: routing?.reasons },
     { headers: corsHeaders }
   );
 }

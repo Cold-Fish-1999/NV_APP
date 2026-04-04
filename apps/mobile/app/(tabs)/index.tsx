@@ -17,7 +17,6 @@ import {
   ScrollView,
   Modal,
   Pressable,
-  Animated,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -26,6 +25,8 @@ import { BlurView } from "expo-blur";
 import Markdown from "react-native-markdown-display";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
 import { useHeaderHeight } from "@/components/SharedHeader";
 import { useAuth } from "@/contexts/auth";
 import { useSubscription } from "@/contexts/subscription";
@@ -58,36 +59,11 @@ type PendingImage = {
 
 const MIN_RECORDING_MS = 300;
 
-function TypingDots() {
-  const a = useRef([new Animated.Value(0.3), new Animated.Value(0.3), new Animated.Value(0.3)]).current;
-  useEffect(() => {
-    const anim = () =>
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(a[0], { toValue: 1, duration: 300, useNativeDriver: true }),
-          Animated.timing(a[1], { toValue: 0.3, duration: 300, useNativeDriver: true }),
-          Animated.timing(a[2], { toValue: 0.3, duration: 300, useNativeDriver: true }),
-        ]),
-        Animated.parallel([
-          Animated.timing(a[0], { toValue: 0.3, duration: 300, useNativeDriver: true }),
-          Animated.timing(a[1], { toValue: 1, duration: 300, useNativeDriver: true }),
-          Animated.timing(a[2], { toValue: 0.3, duration: 300, useNativeDriver: true }),
-        ]),
-        Animated.parallel([
-          Animated.timing(a[0], { toValue: 0.3, duration: 300, useNativeDriver: true }),
-          Animated.timing(a[1], { toValue: 0.3, duration: 300, useNativeDriver: true }),
-          Animated.timing(a[2], { toValue: 1, duration: 300, useNativeDriver: true }),
-        ]),
-      ]);
-    const loop = Animated.loop(anim());
-    loop.start();
-    return () => loop.stop();
-  }, []);
+function ThinkingIndicator({ deep }: { deep?: boolean }) {
   return (
-    <View style={styles.typingDots}>
-      {a.map((v, i) => (
-        <Animated.View key={i} style={[styles.typingDot, { opacity: v }]} />
-      ))}
+    <View style={styles.thinkingRow}>
+      <ActivityIndicator size="small" color={CHAT_THEME.accent} />
+      {deep && <Text style={styles.thinkingLabel}>Thinking deeper …</Text>}
     </View>
   );
 }
@@ -131,8 +107,11 @@ export default function ChatScreen() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [showTimeForIds, setShowTimeForIds] = useState<Set<string>>(new Set());
   const [uploadingImages, setUploadingImages] = useState(false);
+  const [deepThinking, setDeepThinking] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const lastUserIdRef = useRef<string | null>(null);
   const flatListRef = useRef<FlatListType<Message>>(null);
+  const deepThinkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const sub = Keyboard.addListener("keyboardDidShow", () => {
@@ -413,6 +392,9 @@ export default function ChatScreen() {
     const assistantMsg: Message = { id: assistantMsgId, role: "assistant", content: "", createdAt: nowIso };
     setMessages((prev) => filterRecent24h([...prev, userMsg, assistantMsg]));
     setLoading(true);
+    setDeepThinking(false);
+    if (deepThinkTimerRef.current) clearTimeout(deepThinkTimerRef.current);
+    deepThinkTimerRef.current = setTimeout(() => setDeepThinking(true), 4000);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
 
     let imageUrls: string[] = [];
@@ -444,6 +426,8 @@ export default function ChatScreen() {
         imagePaths,
         mockTier
       );
+      if (deepThinkTimerRef.current) clearTimeout(deepThinkTimerRef.current);
+      setDeepThinking(false);
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantMsgId
@@ -453,6 +437,8 @@ export default function ChatScreen() {
       );
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
     } catch (e) {
+      if (deepThinkTimerRef.current) clearTimeout(deepThinkTimerRef.current);
+      setDeepThinking(false);
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantMsgId
@@ -587,7 +573,7 @@ export default function ChatScreen() {
                   </ScrollView>
                 ) : null}
                 {showLoading ? (
-                  <TypingDots />
+                  <ThinkingIndicator deep={deepThinking} />
                 ) : item.content && item.content.trim() ? (
                   <>
                     {item.deepAnalysis && (
@@ -596,6 +582,23 @@ export default function ChatScreen() {
                       </Text>
                     )}
                     <Markdown style={mdStyles}>{item.content}</Markdown>
+                    <TouchableOpacity
+                      style={styles.copyIcon}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={() => {
+                        Clipboard.setStringAsync(item.content);
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setCopiedId(item.id);
+                        setTimeout(() => setCopiedId((prev) => prev === item.id ? null : prev), 1500);
+                      }}
+                      activeOpacity={0.5}
+                    >
+                      <Ionicons
+                        name={copiedId === item.id ? "checkmark" : "copy-outline"}
+                        size={14}
+                        color={copiedId === item.id ? CHAT_THEME.accent : CHAT_THEME.muted}
+                      />
+                    </TouchableOpacity>
                   </>
                 ) : null}
               </View>
@@ -609,10 +612,10 @@ export default function ChatScreen() {
         </Pressable>
       );
     },
-    [loading, showTimeForIds, toggleMessageTime]
+    [loading, deepThinking, copiedId, showTimeForIds, toggleMessageTime]
   );
 
-  const inputPadBottom = tabClearance + 12;
+  const inputPadBottom = tabClearance + 20;
 
   return (
     <View style={styles.container}>
@@ -792,7 +795,7 @@ const CHAT_THEME = {
   bg: "#f9faf5",
   bgInput: "#f5f5f3",
   border: "#e8e8e6",
-  userBubble: "#e5e5e5",
+  userBubble: "#eeeeec",
   userText: "#1a1a1a",
   assistantText: "#1a1a1a",
   muted: "#9a9a9a",
@@ -850,6 +853,24 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     letterSpacing: 0.3,
   },
+  copyIcon: {
+    alignSelf: "flex-start",
+    marginTop: 4,
+    padding: 2,
+    opacity: 0.5,
+  },
+  thinkingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 6,
+  },
+  thinkingLabel: {
+    fontSize: 13,
+    color: CHAT_THEME.accent,
+    fontWeight: "500",
+    letterSpacing: 0.15,
+  },
   timeText: { fontSize: 12, marginTop: 6, color: CHAT_THEME.time },
   userTimeText: { textAlign: "right", paddingRight: 4 },
   assistantTimeText: { textAlign: "left", paddingLeft: 0 },
@@ -861,18 +882,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
     backgroundColor: CHAT_THEME.border,
   },
-  typingDots: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 2,
-  },
-  typingDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: CHAT_THEME.muted,
+  _typingDotsLegacy: {
+    display: "none",
   },
   imagePreviewOverlay: {
     flex: 1,

@@ -214,20 +214,143 @@ ${context}
   `.trim();
 }
 
-const TREND_PATTERN =
-  /trend|pattern|lately|recently|past (?:week|month|months|year)|always|keep(?:ing)?|getting (?:worse|better)|improv|最近|一直|趋势|规律|以前|历史|这段时间|好转|变化/i;
-const CONCERN_PATTERN =
-  /should I|serious|worried|concern|see a doctor|严重|需要|要不要|看医生|担心|建议|要紧吗|有问题吗/i;
+// ── Deep-analysis scoring router ─────────────────────────────
 
+const TREND_PATTERN =
+  /trend|pattern|lately|recently|past (?:week|month|months|year)|always|keep(?:ing)?|getting (?:worse|better)|improv|最近|一直|趋势|规律|以前|历史|这段时间|好转|变化|últimamente|recientemente|tendencia|patrón|empeorando|mejorando|récemment|dernièrement|tendance|évolution|empirer|s'améliorer/i;
+
+const CONCERN_PATTERN =
+  /should I|serious|worried|concern|see a doctor|严重|需要|要不要|看医生|担心|建议|要紧吗|有问题吗|debería|grave|preocupad[oa]|ver a un médico|devrais-je|inqui[eè]t|voir un médecin/i;
+
+const MEDICAL_DOC_PATTERN =
+  /lab ?result|blood ?test|x-?ray|mri|ct ?scan|prescription|report|检查|化验|报告|处方|体检|血常规|尿检|análisis|resultado|radiografía|receta|résultat|ordonnance|radiographie/i;
+
+const RISK_FLAG_STOP_WORDS = new Set([
+  "family", "history", "risk", "concern", "issue", "condition", "of", "a", "the", "with", "and", "or", "in", "for", "to",
+  "家族", "病史", "风险", "问题", "情况", "有", "的", "和",
+  "familia", "historial", "riesgo", "problema", "condición", "de", "un", "una", "con", "del", "los", "las", "el", "la",
+  "famille", "antécédents", "risque", "problème", "affection", "des", "du", "le",
+]);
+
+const COMMON_SYNONYMS: Record<string, string[]> = {
+  diabetes: ["blood sugar", "glucose", "diabetic", "糖尿病", "血糖"],
+  hypertension: ["high blood pressure", "blood pressure", "高血压", "血压高", "hipertensión", "presión arterial"],
+  thyroid: ["甲状腺", "tiroides", "thyroïde"],
+  asthma: ["哮喘", "asma", "asthme"],
+  cancer: ["癌", "tumor", "tumour", "cáncer", "tumeur"],
+  heart: ["cardiac", "cardiovascular", "心脏", "心血管", "cardíaco", "cardiaque"],
+  cholesterol: ["胆固醇", "colesterol", "cholestérol"],
+};
+
+/**
+ * Extract medically meaningful keywords from risk flag strings.
+ * Removes generic words (family, history, risk, etc.) and keeps
+ * the meaningful medical terms, plus any known synonyms.
+ */
+export function extractMedicalKeywords(riskFlags: string[]): string[] {
+  const keywords: string[] = [];
+  for (const flag of riskFlags) {
+    const lower = flag.toLowerCase().trim();
+    if (!lower) continue;
+    keywords.push(lower);
+    const words = lower.split(/[\s,;/]+/).filter(Boolean);
+    const meaningful = words.filter((w) => w.length >= 2 && !RISK_FLAG_STOP_WORDS.has(w));
+    for (const w of meaningful) {
+      keywords.push(w);
+      const syns = Object.entries(COMMON_SYNONYMS).find(
+        ([key, vals]) => key === w || vals.some((v) => v === w)
+      );
+      if (syns) {
+        keywords.push(syns[0]);
+        keywords.push(...syns[1]);
+      }
+    }
+  }
+  return [...new Set(keywords)];
+}
+
+export type DeepAnalysisResult = {
+  shouldEscalate: boolean;
+  score: number;
+  reasons: string[];
+};
+
+export type DeepAnalysisInput = {
+  message: string;
+  riskFlags: string[];
+  imageCount?: number;
+  hasEmptyText?: boolean;
+};
+
+const ESCALATION_THRESHOLD = 2;
+
+/**
+ * Scoring-based deep-analysis router.
+ *
+ * Test expectations:
+ *   "我最近头疼"                           → escalate (trend +1, risk match possible → ≥2)
+ *   "我头疼"                               → probably not (score 0–1)
+ *   "Últimamente me duele la cabeza"       → escalate (trend +1)
+ *   "Je m'inquiète, est-ce grave ?"        → escalate (concern +1, trend possible → ≥2)
+ *   image-only upload of a report          → escalate (image +1, empty text +1, doc hint +2 → ≥2)
+ *   "hello"                                → not escalate (score 0)
+ */
+export function analyzeDeepAnalysisNeed(input: DeepAnalysisInput): DeepAnalysisResult {
+  const { message, riskFlags, imageCount = 0, hasEmptyText } = input;
+  const lowerMsg = message.toLowerCase();
+  let score = 0;
+  const reasons: string[] = [];
+
+  if (TREND_PATTERN.test(message)) {
+    score += 1;
+    reasons.push("trend_language");
+  }
+
+  if (CONCERN_PATTERN.test(message)) {
+    score += 1;
+    reasons.push("concern_language");
+  }
+
+  const medicalKeywords = extractMedicalKeywords(riskFlags);
+  const matchedFlags = medicalKeywords.filter((kw) => lowerMsg.includes(kw));
+  if (matchedFlags.length > 0) {
+    score += 2;
+    reasons.push(`risk_flag_match:${matchedFlags.slice(0, 3).join(",")}`);
+  }
+
+  if (imageCount > 0) {
+    score += 1;
+    reasons.push("has_images");
+
+    const textIsEmpty = hasEmptyText ?? (message.trim().length === 0);
+    const textIsMinimal = message.trim().length > 0 && message.trim().length <= 10;
+    if (textIsEmpty || textIsMinimal) {
+      score += 1;
+      reasons.push("image_with_little_text");
+    }
+
+    if (MEDICAL_DOC_PATTERN.test(message)) {
+      score += 2;
+      reasons.push("likely_medical_document");
+    }
+  }
+
+  if (message.length > 120 && (message.includes("\n") || message.split(/[,，;；。.!！?？]/).length >= 3)) {
+    score += 1;
+    reasons.push("complex_message");
+  }
+
+  return {
+    shouldEscalate: score >= ESCALATION_THRESHOLD,
+    score,
+    reasons,
+  };
+}
+
+/** @deprecated Use analyzeDeepAnalysisNeed instead */
 export function needsDeepAnalysis(
   message: string,
   riskFlags: string[]
 ): boolean {
-  const lowerMsg = message.toLowerCase();
-  const riskFlagTriggered = riskFlags.some((flag) => {
-    const firstWord = flag.toLowerCase().split(" ")[0];
-    return firstWord.length >= 3 && lowerMsg.includes(firstWord);
-  });
-
-  return riskFlagTriggered || TREND_PATTERN.test(message) || CONCERN_PATTERN.test(message);
+  return analyzeDeepAnalysisNeed({ message, riskFlags }).shouldEscalate;
 }
