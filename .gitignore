@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+apps/mobile/ios/build/
+apps/mobile/ios/Pods/
+apps/mobile/android/app/build/
+apps/server/.next/
+*.tsbuildinfo
+
+# Expo
+apps/mobile/.expo/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+apps/server/.env.local
+apps/mobile/.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# Xcode
+DerivedData/
+xcuserdata/
+
+# Temporary
+*.log
+/tmp/

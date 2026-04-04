@@ -1,0 +1,23 @@
+diff --git a/third-party-podspecs/ReactNativeDependencies.podspec b/third-party-podspecs/ReactNativeDependencies.podspec
+index 32ebe58e05f46f9ccbbd582424aee89b7a609830..414c48c00bfb71ceb5a083603d9f551627802e88 100644
+--- a/third-party-podspecs/ReactNativeDependencies.podspec
++++ b/third-party-podspecs/ReactNativeDependencies.podspec
+@@ -64,8 +64,16 @@ Pod::Spec.new do |spec|
+ 
+     cp -R "$HEADERS_PATH/" Headers
+     mkdir -p framework/packages/react-native
+-    cp -R "$XCFRAMEWORK_PATH/.." framework/packages/react-native/
+-    find "$XCFRAMEWORK_PATH/.." -type f -exec rm {} +
++    PARENT_DIR=$(dirname "$XCFRAMEWORK_PATH")
++    TARGET_DIR="$CURRENT_PATH/framework/packages/react-native"
++    mkdir -p "$TARGET_DIR"
++    ABS_PARENT=$(cd "$PARENT_DIR" && pwd -P)
++    ABS_TARGET=$(cd "$TARGET_DIR" && pwd -P)
++    # Avoid cp dir-into-self when tarball is already laid out under framework/packages/react-native (RN 0.81)
++    if [ "$ABS_PARENT" != "$ABS_TARGET" ]; then
++      cp -R "$PARENT_DIR/." "$TARGET_DIR/"
++      find "$PARENT_DIR" -type f -exec rm {} +
++    fi
+     find "$CURRENT_PATH" -type d -empty -delete
+   CMD
+ 

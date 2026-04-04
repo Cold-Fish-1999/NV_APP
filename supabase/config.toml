@@ -1,0 +1,22 @@
+# ============================================================
+# NVAPP Supabase 配置
+# ============================================================
+#
+# 定时任务通过 pg_cron + pg_net 在数据库层面调度（见 021_cron_schedules.sql）。
+# 运行迁移前需在 Dashboard 完成以下一次性设置：
+#
+#   1. Dashboard → Database → Extensions → 启用 pg_cron 和 pg_net
+#   2. 在 SQL Editor 中执行（替换为真实值）：
+#      SELECT vault.create_secret('https://<project-ref>.supabase.co', 'project_url');
+#      SELECT vault.create_secret('<your-anon-key>', 'anon_key');
+#
+# 调度表：
+#   weekly-summary           每周一 03:00 UTC    生成周快照 + rolling_weekly
+#   monthly-summary          每周一 04:00 UTC    月初时生成月/季/半年总结
+#   generate-weekly-report   每周一 05:00 UTC    生成周报（Reports Tab）
+#   generate-monthly-report  每周一 06:00 UTC    月初时生成月报（Reports Tab）
+#   process-document-queue   每 5 分钟            处理文档上下文队列
+#   retry-document-queue     每 30 分钟           重试失败的文档队列
+#
+# Edge Function secrets（Dashboard → Settings → Secrets）：
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY
