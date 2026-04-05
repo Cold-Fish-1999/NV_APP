@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Platform,
   Pressable,
   useWindowDimensions,
   NativeSyntheticEvent,
@@ -14,8 +13,7 @@ import {
 import { storageSetItem } from "@/lib/storage";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const SERIF = Platform.OS === "ios" ? "Georgia" : "serif";
+import { FONT_SANS, FONT_SANS_BOLD, FONT_SERIF } from "@/lib/fonts";
 
 const THEME = {
   bg: "#f9faf5",
@@ -264,7 +262,7 @@ const styles = StyleSheet.create({
   section: { marginBottom: 20 },
   heroTitle: {
     fontSize: 26,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontWeight: "600",
     color: THEME.text,
     lineHeight: 34,
@@ -272,20 +270,20 @@ const styles = StyleSheet.create({
   },
   heroSubtitle: {
     fontSize: 16,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     color: THEME.textMuted,
     lineHeight: 24,
   },
   sectionTitle: {
     fontSize: 16,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontWeight: "600",
     color: THEME.text,
     marginBottom: 14,
   },
   bulletRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   bulletIcon: { fontSize: 16, color: THEME.accent, marginRight: 10 },
-  bulletText: { fontSize: 15, fontFamily: SERIF, color: THEME.text },
+  bulletText: { fontSize: 15, fontFamily: FONT_SERIF, color: THEME.text },
   billingOptionBlocks: {
     flexDirection: "row",
     gap: 10,
@@ -321,14 +319,14 @@ const styles = StyleSheet.create({
   },
   billingBlockPrice: {
     fontSize: 18,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS_BOLD,
     fontWeight: "600",
     color: THEME.text,
     marginBottom: 4,
   },
   billingBlockCycle: {
     fontSize: 12,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS,
     color: THEME.textMuted,
   },
   billingSaveBadge: {
@@ -342,7 +340,7 @@ const styles = StyleSheet.create({
   },
   billingSaveBadgeText: {
     fontSize: 10,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS_BOLD,
     fontWeight: "600",
     color: "#fff",
   },
@@ -383,40 +381,40 @@ const styles = StyleSheet.create({
   },
   mostPopularText: {
     fontSize: 11,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS_BOLD,
     fontWeight: "600",
     color: THEME.accent,
   },
   planName: {
     fontSize: 22,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontWeight: "600",
     color: THEME.text,
     marginBottom: 2,
   },
   planTagline: {
     fontSize: 13,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     color: THEME.textMuted,
     marginBottom: 10,
   },
   featuresWrap: { marginBottom: 10 },
   feature: {
     fontSize: 13,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     color: THEME.text,
     marginBottom: 6,
   },
   anchorText: {
     fontSize: 13,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontStyle: "italic",
     color: THEME.textMuted,
     marginBottom: 12,
   },
   freeFallbackCompact: {
     fontSize: 12,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     color: THEME.textMuted,
     lineHeight: 18,
     textAlign: "center",
@@ -431,13 +429,13 @@ const styles = StyleSheet.create({
   },
   ctaBtnText: {
     fontSize: 17,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS_BOLD,
     fontWeight: "600",
     color: "#fff",
   },
   ctaSub: {
     fontSize: 13,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS,
     color: THEME.textMuted,
     textAlign: "center",
     marginTop: 10,
@@ -451,7 +449,7 @@ const styles = StyleSheet.create({
   },
   footerLink: {
     fontSize: 13,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS,
     color: THEME.accent,
   },
   footerDot: {

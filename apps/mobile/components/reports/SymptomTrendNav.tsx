@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { useState, useRef, useMemo } from "react";
+import { View, Text, StyleSheet, Animated, PanResponder } from "react-native";
+import { FONT_SANS_BOLD, fontSerif } from "@/lib/fonts";
 import { BarChart } from "./BarChart";
 
 interface TrendItem {
@@ -20,64 +20,107 @@ interface Props {
 const TREND_BADGE = {
   dn: { label: "↓ Improving", bg: "#EAF3DE", color: "#3B6D11" },
   same: { label: "→ Stable", bg: "#F0ECE6", color: "#6B6B6B" },
-  up: { label: "↑ Worsening", bg: "#FCEBEB", color: "#A32D2D" },
+  up: { label: "Needs attention", bg: "#FCEBEB", color: "#A32D2D" },
 } as const;
 
-export function SymptomTrendNav({ items, monthLabels, barHeight }: Props) {
+const SWIPE_THRESHOLD = 50;
+
+export function SymptomTrendNav({ items, barHeight }: Props) {
   const [idx, setIdx] = useState(0);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const idxRef = useRef(0);
+  const lenRef = useRef(items?.length ?? 0);
+  lenRef.current = items?.length ?? 0;
+  const busy = useRef(false);
+
+  const panResponder = useMemo(() => {
+    const go = (next: number, dir: number) => {
+      if (busy.current) return;
+      busy.current = true;
+      Animated.timing(slideAnim, {
+        toValue: -dir * 300,
+        duration: 150,
+        useNativeDriver: true,
+      }).start(() => {
+        idxRef.current = next;
+        setIdx(next);
+        slideAnim.setValue(dir * 300);
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 150,
+          useNativeDriver: true,
+        }).start(() => {
+          busy.current = false;
+        });
+      });
+    };
+
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gs) =>
+        Math.abs(gs.dx) > Math.abs(gs.dy) && Math.abs(gs.dx) > 10,
+      onPanResponderTerminationRequest: () => true,
+      onPanResponderRelease: (_, gs) => {
+        const i = idxRef.current;
+        const len = lenRef.current;
+        if (gs.dx < -SWIPE_THRESHOLD && i < len - 1) go(i + 1, 1);
+        else if (gs.dx > SWIPE_THRESHOLD && i > 0) go(i - 1, -1);
+      },
+    });
+  }, [slideAnim]);
+
   if (!items || items.length === 0) return null;
 
-  const current = items[idx];
-  const bars = current.weeks ?? current.weekly_breakdown ?? [];
-  const trendKey = (current.trend || "same") as keyof typeof TREND_BADGE;
+  const cur = items[idx];
+  const bars = cur.weeks ?? cur.weekly_breakdown ?? [];
+  const trendKey = (cur.trend || "same") as keyof typeof TREND_BADGE;
   const badge = TREND_BADGE[trendKey] ?? TREND_BADGE.same;
-
-  const prev = () => setIdx((i) => (i > 0 ? i - 1 : items.length - 1));
-  const next = () => setIdx((i) => (i < items.length - 1 ? i + 1 : 0));
 
   return (
     <View>
-      {/* Nav row */}
-      <View style={styles.navRow}>
-        <TouchableOpacity onPress={prev} hitSlop={12} activeOpacity={0.5}>
-          <Ionicons name="chevron-back" size={20} color="#9A9A9A" />
-        </TouchableOpacity>
-        <Text style={styles.symptomName}>{current.name}</Text>
-        <TouchableOpacity onPress={next} hitSlop={12} activeOpacity={0.5}>
-          <Ionicons name="chevron-forward" size={20} color="#9A9A9A" />
-        </TouchableOpacity>
+      <View style={styles.swipeClip}>
+        <Animated.View
+          style={{ transform: [{ translateX: slideAnim }] }}
+          {...panResponder.panHandlers}
+        >
+          <View style={styles.topRow}>
+            <Text style={styles.symptomName} numberOfLines={1}>
+              {cur.name}
+            </Text>
+            <View style={[styles.trendBadge, { backgroundColor: badge.bg }]}>
+              <Text style={[styles.trendBadgeText, { color: badge.color }]}>
+                {badge.label}
+              </Text>
+            </View>
+          </View>
+
+          {cur.description ? (
+            <Text
+              style={[
+                styles.description,
+                { fontFamily: fontSerif(cur.description) },
+              ]}
+            >
+              {cur.description}
+            </Text>
+          ) : null}
+
+          {bars.length > 0 && (
+            <View style={styles.chartWrap}>
+              <BarChart bars={bars} height={barHeight} />
+            </View>
+          )}
+        </Animated.View>
       </View>
 
-      {/* Dot indicators */}
-      <View style={styles.dotsRow}>
-        {items.map((_, i) => (
-          <View
-            key={i}
-            style={[styles.dot, i === idx && styles.dotActive]}
-          />
-        ))}
-      </View>
-
-      {/* Trend badge + description */}
-      <View style={styles.trendRow}>
-        <View style={[styles.trendBadge, { backgroundColor: badge.bg }]}>
-          <Text style={[styles.trendBadgeText, { color: badge.color }]}>
-            {badge.label}
-          </Text>
-        </View>
-        {current.description ? (
-          <Text style={styles.trendDesc}>{current.description}</Text>
-        ) : null}
-      </View>
-
-      {/* Bar chart */}
-      {bars.length > 0 && (
-        <View style={styles.chartWrap}>
-          <BarChart
-            bars={bars}
-            monthLabels={monthLabels}
-            height={barHeight}
-          />
+      {items.length > 1 && (
+        <View style={styles.dotsRow}>
+          {items.map((_, i) => (
+            <View
+              key={i}
+              style={[styles.dot, i === idx && styles.dotActive]}
+            />
+          ))}
         </View>
       )}
     </View>
@@ -85,25 +128,46 @@ export function SymptomTrendNav({ items, monthLabels, barHeight }: Props) {
 }
 
 const styles = StyleSheet.create({
-  navRow: {
+  swipeClip: {
+    overflow: "hidden",
+  },
+  topRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 16,
+    justifyContent: "space-between",
     paddingVertical: 4,
   },
   symptomName: {
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "700",
     color: "#2D2D2D",
-    minWidth: 100,
-    textAlign: "center",
+    flex: 1,
+    fontFamily: FONT_SANS_BOLD,
+  },
+  trendBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    marginLeft: 8,
+  },
+  trendBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    fontFamily: FONT_SANS_BOLD,
+  },
+  description: {
+    fontSize: 13,
+    color: "#6B6B6B",
+    marginTop: 4,
+  },
+  chartWrap: {
+    marginTop: 12,
   },
   dotsRow: {
     flexDirection: "row",
     justifyContent: "center",
     gap: 5,
-    marginTop: 8,
+    marginTop: 12,
   },
   dot: {
     width: 6,
@@ -113,28 +177,5 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     backgroundColor: "#D85A30",
-  },
-  trendRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 10,
-  },
-  trendBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  trendBadgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  trendDesc: {
-    fontSize: 13,
-    color: "#6B6B6B",
-    flex: 1,
-  },
-  chartWrap: {
-    marginTop: 12,
   },
 });

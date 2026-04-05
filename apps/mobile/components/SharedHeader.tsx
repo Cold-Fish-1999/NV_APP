@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { calendarTheme as theme } from "@/lib/calendarTheme";
+import { FONT_SANS_BOLD } from "@/lib/fonts";
 
 interface SharedHeaderProps {
   title: string;
@@ -111,5 +112,6 @@ const $ = StyleSheet.create({
     flex: 1,
     textAlign: "left",
     lineHeight: 24,
+    fontFamily: FONT_SANS_BOLD,
   },
 });

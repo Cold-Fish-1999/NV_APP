@@ -1,6 +1,7 @@
 import { Stack } from "expo-router";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { SharedHeader } from "@/components/SharedHeader";
+import { FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
 import { ReportTabProvider, useReportTab } from "@/contexts/reportTab";
 
 function SegmentedControl() {
@@ -70,9 +71,11 @@ const seg = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
     color: "#999",
+    fontFamily: FONT_SANS_MEDIUM,
   },
   textActive: {
     color: "#2D2D2D",
     fontWeight: "600",
+    fontFamily: FONT_SANS_BOLD,
   },
 });

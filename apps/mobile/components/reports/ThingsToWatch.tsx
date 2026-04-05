@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet } from "react-native";
+import { FONT_SERIF, FONT_SANS_SEMIBOLD,FONT_SANS_BOLD, fontSerif,FONT_SERIF_SEMIBOLD, FONT_SERIF_BOLD } from "@/lib/fonts";
 
 interface WatchItem {
   symptom: string;
@@ -38,10 +39,10 @@ export function ThingsToWatch({ items }: Props) {
                   </Text>
                 </View>
               </View>
-              <Text style={styles.cause}>{item.cause}</Text>
+              <Text style={[styles.cause, { fontFamily: fontSerif(item.cause) }]}>{item.cause}</Text>
               {item.tip ? (
                 <View style={styles.tipBox}>
-                  <Text style={styles.tipText}>{item.tip}</Text>
+                  <Text style={[styles.tipText, { fontFamily: fontSerif(item.tip) }]}>{item.tip}</Text>
                 </View>
               ) : null}
             </View>
@@ -66,6 +67,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#D85A30",
     marginBottom: 14,
+    fontFamily: FONT_SERIF_SEMIBOLD,
   },
   divider: {
     height: 1,
@@ -89,6 +91,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#2D2D2D",
     flex: 1,
+    fontFamily: FONT_SERIF_SEMIBOLD,
   },
   badge: {
     paddingHorizontal: 10,
@@ -96,8 +99,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   badgeText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: "600",
+    fontFamily: FONT_SANS_SEMIBOLD,
   },
   cause: {
     fontSize: 13,

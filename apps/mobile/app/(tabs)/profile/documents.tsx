@@ -27,6 +27,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 import { useHeaderHeight } from "@/components/SharedHeader";
+import { fontSerif, FONT_SANS, FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
 import { useAuth } from "@/contexts/auth";
 import { useSubscription } from "@/contexts/subscription";
 import { showUpgradePrompt } from "@/lib/showUpgradePrompt";
@@ -524,7 +525,7 @@ export default function ProfileDocumentsScreen() {
                     {record.isAiAnalyzing && (
                       <ActivityIndicator size="small" color={DOC_THEME.accent} style={styles.titleSpinner} />
                     )}
-                    <Text style={[styles.docTitle, record.isAiAnalyzing && styles.docTitleMuted]} numberOfLines={2}>
+                    <Text style={[styles.docTitle, record.isAiAnalyzing && styles.docTitleMuted, !record.isAiAnalyzing && { fontFamily: fontSerif(record.title) }]} numberOfLines={2}>
                       {record.isAiAnalyzing ? "Analyzing…" : record.title}
                     </Text>
                   </View>
@@ -540,12 +541,12 @@ export default function ProfileDocumentsScreen() {
                       autoFocus
                     />
                   ) : record.groupUserSummary ? (
-                    <Text style={styles.docNotes}>{record.groupUserSummary}</Text>
+                    <Text style={[styles.docNotes, { fontFamily: fontSerif(record.groupUserSummary) }]}>{record.groupUserSummary}</Text>
                   ) : null}
 
                   {!isEditing && !record.isAiAnalyzing && (
                     displaySummary ? (
-                      <Text style={styles.docDesc}>{displaySummary}</Text>
+                      <Text style={[styles.docDesc, { fontFamily: fontSerif(displaySummary) }]}>{displaySummary}</Text>
                     ) : !hasAnySummary ? (
                       <Text style={styles.docDescMuted}>Processing…</Text>
                     ) : null
@@ -783,8 +784,8 @@ const styles = StyleSheet.create({
   centered: { justifyContent: "center", alignItems: "center" },
   scroll: { flex: 1 },
   scrollContent: { padding: 20 },
-  title: { fontSize: 24, fontWeight: "600", marginBottom: 8, color: DOC_THEME.text },
-  hint: { fontSize: 14, color: DOC_THEME.textSecondary },
+  title: { fontSize: 24, fontWeight: "600", marginBottom: 8, color: DOC_THEME.text, fontFamily: FONT_SANS_BOLD },
+  hint: { fontSize: 14, color: DOC_THEME.textSecondary, fontFamily: FONT_SANS },
 
   emptyWrap: {
     alignItems: "center",
@@ -796,6 +797,7 @@ const styles = StyleSheet.create({
     color: DOC_THEME.textSecondary,
     textAlign: "center",
     lineHeight: 20,
+    fontFamily: FONT_SANS,
   },
 
   docCardWrap: {
@@ -819,11 +821,12 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   docTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "600",
     color: DOC_THEME.text,
     lineHeight: 20,
     flexShrink: 1,
+    fontFamily: FONT_SANS_BOLD,
   },
   docTitleMuted: {
     color: DOC_THEME.textSecondary,
@@ -839,6 +842,7 @@ const styles = StyleSheet.create({
     color: DOC_THEME.textSecondary,
     fontStyle: "italic",
     marginTop: 6,
+    fontFamily: FONT_SANS,
   },
   docNotes: {
     fontSize: 13,
@@ -858,6 +862,7 @@ const styles = StyleSheet.create({
     borderColor: DOC_THEME.border,
     minHeight: 36,
     textAlignVertical: "top" as const,
+    fontFamily: FONT_SANS,
   },
   thumbScroll: {
     marginTop: 10,
@@ -878,6 +883,7 @@ const styles = StyleSheet.create({
     textAlign: "right",
     marginTop: 4,
     marginRight: 4,
+    fontFamily: FONT_SANS,
   },
   longPressActions: {
     flexDirection: "row",
@@ -963,6 +969,7 @@ const styles = StyleSheet.create({
     color: DOC_THEME.textSecondary,
     lineHeight: 16,
     marginBottom: 10,
+    fontFamily: FONT_SANS,
   },
   uploadNoteInput: {
     marginTop: 10,
@@ -974,6 +981,7 @@ const styles = StyleSheet.create({
     color: DOC_THEME.text,
     minHeight: 36,
     textAlignVertical: "top" as const,
+    fontFamily: FONT_SANS,
   },
   draftListContent: { paddingVertical: 4, paddingRight: 8 },
   draftItem: { position: "relative" },
@@ -989,7 +997,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     zIndex: 10,
   },
-  removeBadgeText: { color: "#fff", fontSize: 16, lineHeight: 18, fontWeight: "700" },
+  removeBadgeText: { color: "#fff", fontSize: 16, lineHeight: 18, fontWeight: "700", fontFamily: FONT_SANS_BOLD },
   addTile: {
     width: 84,
     height: 84,
@@ -1032,5 +1040,5 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 24,
   },
-  imageModalCloseText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  imageModalCloseText: { color: "#fff", fontSize: 16, fontWeight: "600", fontFamily: FONT_SANS_BOLD },
 });

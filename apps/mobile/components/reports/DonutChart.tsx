@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet } from "react-native";
+import { FONT_SANS_BOLD } from "@/lib/fonts";
 import Svg, { Circle } from "react-native-svg";
 
 interface Segment {
@@ -11,7 +12,7 @@ interface Props {
   total?: number;
 }
 
-const COLORS = ["#D85A30", "#E6A817", "#4A90D9", "#E9A070", "#7ED321", "#9A9A9A"];
+const COLORS = ["#C27C5B", "#D4A96A", "#B5756A", "#C9A88C", "#A68A7B", "#C4B5A5"];
 const SIZE = 120;
 const STROKE = 22;
 const RADIUS = (SIZE - STROKE) / 2;
@@ -106,6 +107,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     color: "#2D2D2D",
+    fontFamily: FONT_SANS_BOLD,
   },
   centerText: {
     fontSize: 11,
@@ -137,5 +139,6 @@ const styles = StyleSheet.create({
     color: "#2D2D2D",
     minWidth: 20,
     textAlign: "right",
+    fontFamily: FONT_SANS_BOLD,
   },
 });

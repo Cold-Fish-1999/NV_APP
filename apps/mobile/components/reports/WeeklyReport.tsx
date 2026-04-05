@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet } from "react-native";
+import { FONT_SANS, FONT_SANS_BOLD, FONT_SANS_SEMIBOLD } from "@/lib/fonts";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { SymptomTrendNav } from "./SymptomTrendNav";
 import { ThingsToWatch } from "./ThingsToWatch";
@@ -17,18 +18,15 @@ export function WeeklyReport({ report }: Props) {
       <View style={styles.statsRow}>
         <StatCell value={d.total_records} label="Records" />
         <StatCell value={d.distinct_types} label="Types" />
-        <StatCell value={capitalize(d.avg_severity)} label="Avg severity" large />
+        <StatCell value={capitalize(d.avg_severity)} label="Avg severity" />
       </View>
 
       <View style={styles.divider} />
 
-      {/* Top symptoms */}
-      <CollapsibleSection
-        title="Top symptoms"
-        subtitle={d.top_symptoms.map((s) => s.name).join(", ")}
-      >
+      {/* Symptom summary */}
+      <CollapsibleSection title="Symptom summary">
         <View style={styles.pillRow}>
-          {d.top_symptoms.map((s) => (
+          {d.top_symptoms.slice(0, 5).map((s) => (
             <View key={s.name} style={styles.symptomPill}>
               <Text style={styles.symptomPillText}>
                 {s.name} ×{s.count}
@@ -41,8 +39,11 @@ export function WeeklyReport({ report }: Props) {
       <View style={styles.divider} />
 
       {/* Symptom trends */}
-      <CollapsibleSection title="Symptom trends" subtitle="vs previous weeks">
-        <SymptomTrendNav items={d.symptom_trends} barHeight={80} />
+      <CollapsibleSection title="Symptom trends">
+        <SymptomTrendNav
+          items={d.symptom_trends.map((s) => ({ ...s, description: "" }))}
+          barHeight={80}
+        />
       </CollapsibleSection>
 
       <View style={styles.divider} />
@@ -50,12 +51,11 @@ export function WeeklyReport({ report }: Props) {
       {/* Severity */}
       <CollapsibleSection
         title="Severity"
-        subtitle={`Mostly ${d.avg_severity} · ${d.severity_breakdown.high} high`}
       >
         <View style={styles.severityWrap}>
-          <SeverityBar label="High" count={d.severity_breakdown.high} total={d.total_records} color="#D85A30" />
-          <SeverityBar label="Medium" count={d.severity_breakdown.medium} total={d.total_records} color="#E6A817" />
-          <SeverityBar label="Low" count={d.severity_breakdown.low} total={d.total_records} color="#7ED321" />
+          <SeverityBar label="High" count={d.severity_breakdown.high} total={d.total_records} color="#C27C5B" />
+          <SeverityBar label="Medium" count={d.severity_breakdown.medium} total={d.total_records} color="#D4A96A" />
+          <SeverityBar label="Low" count={d.severity_breakdown.low} total={d.total_records} color="#A68A7B" />
         </View>
       </CollapsibleSection>
 
@@ -72,17 +72,13 @@ export function WeeklyReport({ report }: Props) {
 function StatCell({
   value,
   label,
-  large,
 }: {
   value: number | string;
   label: string;
-  large?: boolean;
 }) {
   return (
     <View style={styles.statCell}>
-      <Text style={[styles.statValue, large && styles.statValueLarge]}>
-        {value}
-      </Text>
+      <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
@@ -137,21 +133,31 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   statCell: { flex: 1 },
-  statValue: { fontSize: 26, fontWeight: "700", color: "#2D2D2D" },
-  statValueLarge: { fontSize: 22 },
-  statLabel: { fontSize: 12, color: "#9A9A9A", marginTop: 2 },
+  statValue: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#2D2D2D",
+    marginTop: 6,
+    fontFamily: FONT_SANS_BOLD,
+  },
+  statLabel: { fontSize: 13, color: "#9A9A9A", marginTop: 2, fontFamily: FONT_SANS },
   divider: { height: 1, backgroundColor: "#F0ECE6" },
   pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   symptomPill: {
-    backgroundColor: "#EAF3DE",
+    backgroundColor: "#FEF0E8",
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  symptomPillText: { fontSize: 13, fontWeight: "600", color: "#3B6D11" },
+  symptomPillText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#D85A30",
+    fontFamily: FONT_SANS,
+  },
   severityWrap: { gap: 10 },
   sevRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  sevLabel: { fontSize: 13, color: "#6B6B6B", width: 52 },
+  sevLabel: { fontSize: 13, color: "#6B6B6B", width: 52, fontFamily: FONT_SANS },
   sevBarBg: {
     flex: 1,
     height: 10,
@@ -166,6 +172,7 @@ const styles = StyleSheet.create({
     color: "#2D2D2D",
     width: 24,
     textAlign: "right",
+    fontFamily: FONT_SANS_SEMIBOLD,
   },
   watchWrap: { marginTop: 8 },
 });

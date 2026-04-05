@@ -10,6 +10,7 @@ import { fetchDayWeather, weatherCodeToLabel } from "@/lib/weatherApi";
 import { useUserLocation } from "@/lib/useUserLocation";
 import type { SymptomEntry } from "@/types/calendar";
 import { TIME_SLOTS } from "@/lib/dateUtils";
+import { FONT_SANS, FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
 
 interface DayDetailViewProps {
   date: string;
@@ -179,13 +180,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.border,
   },
-  dateText: { fontSize: 18, fontWeight: "600", color: theme.text, marginBottom: 8 },
+  dateText: { fontSize: 18, fontWeight: "600", fontFamily: FONT_SANS_BOLD, color: theme.text, marginBottom: 8 },
   weatherSection: { marginTop: 12 },
   weatherLabelRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  weatherLabel: { fontSize: 13, color: theme.textSecondary },
-  tempRange: { fontSize: 13, color: theme.textMuted },
+  weatherLabel: { fontSize: 13, fontFamily: FONT_SANS, color: theme.textSecondary },
+  tempRange: { fontSize: 13, fontFamily: FONT_SANS, color: theme.textMuted },
   weatherLoading: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8 },
-  weatherLoadingText: { fontSize: 13, color: theme.textMuted },
+  weatherLoadingText: { fontSize: 13, fontFamily: FONT_SANS, color: theme.textMuted },
   timeline: {},
   slotBlock: { marginBottom: 24 },
   timelineRow: {
@@ -206,6 +207,7 @@ const styles = StyleSheet.create({
   timeText: {
     fontSize: 13,
     fontWeight: "500",
+    fontFamily: FONT_SANS_MEDIUM,
     color: theme.textSecondary,
     width: 48,
     textAlign: "right",
@@ -239,5 +241,5 @@ const styles = StyleSheet.create({
     marginRight: 3,
   },
   contentCol: { flex: 1, marginLeft: 12 },
-  slotLabel: { fontSize: 14, fontWeight: "500", color: theme.text, marginBottom: 12 },
+  slotLabel: { fontSize: 14, fontWeight: "500", fontFamily: FONT_SANS_MEDIUM, color: theme.text, marginBottom: 12 },
 });

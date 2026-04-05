@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import type { DayAggregated } from "@/lib/calendarService";
 import { calendarTheme as theme } from "@/lib/calendarTheme";
+import { FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -234,6 +235,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 10,
     fontWeight: "500",
+    fontFamily: FONT_SANS_MEDIUM,
     color: theme.textMuted,
     letterSpacing: 0.4,
     marginBottom: 8,
@@ -262,6 +264,7 @@ const styles = StyleSheet.create({
     left: 6,
     fontSize: 28,
     fontWeight: "800",
+    fontFamily: FONT_SANS_BOLD,
     color: theme.textMuted,
     opacity: 0.08,
     letterSpacing: 1,
@@ -278,7 +281,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.primary,
   },
   dotPastEmpty: {
-    backgroundColor: "#C8C4BC",
+    backgroundColor: "#E0DCD6",
   },
   dotFuture: {
     backgroundColor: "transparent",

@@ -11,10 +11,7 @@ import { config } from "dotenv";
 config({ path: "apps/server/.env.local" });
 
 import { createClient } from "@supabase/supabase-js";
-import {
-  normalizeKeyword,
-  normalizeKeywords,
-} from "../apps/server/lib/symptomTaxonomy";
+import { normalizeKeywordsFromDb } from "../apps/server/lib/taxonomyDb";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -172,14 +169,27 @@ async function generateWeeklyReport(
     if (s && s in sevBreakdown) sevBreakdown[s]++;
   }
 
-  // 4-week buckets
+  // 8-week buckets
   const weekBuckets = [];
-  for (let i = 3; i >= 0; i--) {
+  for (let i = 7; i >= 0; i--) {
     const mon = addDays(weekMon, -7 * i);
-    weekBuckets.push({ mon, start: fmt(mon), end: fmt(addDays(mon, 6)), label: weekLabel(mon) });
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    weekBuckets.push({ mon, start: fmt(mon), end: fmt(addDays(mon, 6)), label: `${months[mon.getMonth()]} ${mon.getDate()}` });
   }
 
-  const symptomTrends = topSymptoms.map(({ name }) => ({
+  // Top 10 symptoms across entire 8-week window for trends
+  const trendTagFreq: Record<string, number> = {};
+  const eightWeeksAgo = fmt(addDays(weekMon, -7 * 7));
+  for (const r of allSymptoms.filter(r => r.local_date >= eightWeeksAgo && r.local_date <= weekEnd)) {
+    for (const t of r.tags) trendTagFreq[t] = (trendTagFreq[t] || 0) + 1;
+  }
+  const trendTop10 = Object.entries(trendTagFreq)
+    .filter(([, count]) => count >= 3)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([name]) => name);
+
+  const symptomTrends = trendTop10.map(name => ({
     name,
     trend: "" as string,
     description: "",
@@ -326,7 +336,7 @@ async function generateMonthlyReport(
   const tagFreqAll: Record<string, number> = {};
   for (const r of allThreeMonths) for (const t of r.tags) tagFreqAll[t] = (tagFreqAll[t] || 0) + 1;
 
-  const top5 = Object.entries(tagFreqAll).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name]) => name);
+  const top5 = Object.entries(tagFreqAll).filter(([, count]) => count >= 3).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name]) => name);
 
   // Weekly breakdown (~13 weeks)
   const threeMonthStartDate = startOfMonth(twoM);
@@ -348,18 +358,17 @@ async function generateMonthlyReport(
     })),
   }));
 
-  // Breakdown (donut)
+  // Breakdown (donut) — use current month's own top tags
   const tagFreqCurrent: Record<string, number> = {};
   for (const r of currentRows) for (const t of r.tags) tagFreqCurrent[t] = (tagFreqCurrent[t] || 0) + 1;
 
-  const top5Set = new Set(top5);
+  const currentTop = Object.entries(tagFreqCurrent).sort((a, b) => b[1] - a[1]);
   const breakdown: Array<{ name: string; count: number }> = [];
   let otherCount = 0;
-  for (const [tag, count] of Object.entries(tagFreqCurrent)) {
-    if (top5Set.has(tag)) breakdown.push({ name: tag, count });
-    else otherCount += count;
+  for (let i = 0; i < currentTop.length; i++) {
+    if (i < 5) breakdown.push({ name: currentTop[i][0], count: currentTop[i][1] });
+    else otherCount += currentTop[i][1];
   }
-  breakdown.sort((a, b) => b.count - a.count);
   if (otherCount > 0) breakdown.push({ name: "Other", count: otherCount });
 
   // AI insights
@@ -440,14 +449,20 @@ async function main() {
     return;
   }
 
-  // Normalize all keywords
+  // Normalize all keywords via DB-backed taxonomy (with AI expansion)
   const allTags = [...new Set(rawSymptoms.flatMap(r => r.tags ?? []))];
-  const normalized = normalizeKeywords(allTags);
-  const tagMap = Object.fromEntries(allTags.map((t, i) => [t, normalized[i] ?? t]));
+  const tagMap = await normalizeKeywordsFromDb(
+    allTags,
+    ANTHROPIC_API_KEY,
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
 
-  const allSymptoms: SymptomRow[] = rawSymptoms.map(r => ({
-    ...r,
-    tags: [...new Set((r.tags ?? []).map(t => tagMap[t] ?? t))],
+  const allSymptoms: SymptomRow[] = rawSymptoms.map((r: any) => ({
+    summary: r.summary as string,
+    tags: [...new Set(((r.tags ?? []) as string[]).map(t => tagMap[t] ?? t))],
+    severity: r.severity as string | null,
+    local_date: r.local_date as string,
   }));
 
   console.log(`\nTotal symptom records: ${allSymptoms.length}`);

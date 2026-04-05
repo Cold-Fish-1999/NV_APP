@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet } from "react-native";
 import { calendarTheme as theme, severityColors } from "@/lib/calendarTheme";
+import { FONT_SANS } from "@/lib/fonts";
 
 interface TagPillsProps {
   tags: { tag: string; count: number; severity?: string | null }[];
@@ -43,6 +44,7 @@ const styles = StyleSheet.create({
   placeholderWrap: { opacity: 0.7 },
   placeholder: {
     fontSize: 13,
+    fontFamily: FONT_SANS,
     color: "rgba(45, 45, 45, 0.38)",
     letterSpacing: 1,
     fontWeight: "400",
@@ -53,5 +55,5 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 14,
   },
-  text: { fontSize: 13, color: theme.pillText, maxWidth: 80 },
+  text: { fontSize: 13, fontFamily: FONT_SANS, color: theme.pillText, maxWidth: 80 },
 });

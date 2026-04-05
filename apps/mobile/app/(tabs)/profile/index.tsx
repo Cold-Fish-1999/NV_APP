@@ -17,6 +17,7 @@ import * as Haptics from "expo-haptics";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@/components/SharedHeader";
+import { fontSerif, FONT_SANS, FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
 import { useAuth } from "@/contexts/auth";
 import { useSubscription } from "@/contexts/subscription";
 import { supabase } from "@/lib/supabase";
@@ -42,7 +43,7 @@ import type { OnboardingSurvey } from "@/lib/onboardingInsight";
 const PROFILE_FIELD_LABELS: Record<ProfileDisplayKey, string> = {
   age_range: "Age",
   gender: "Gender",
-  occupation: "Occupation",
+  occupation: "Job",
   smoking: "Smoking",
   alcohol: "Alcohol",
   health_concerns: "Health concerns",
@@ -656,7 +657,7 @@ export default function ProfileScreen() {
                   )}
                   {expanded && (
                     <View style={styles.memoryExpandedBody}>
-                      <Text style={styles.memorySummaryText}>{s.summary || "—"}</Text>
+                      <Text style={[styles.memorySummaryText, { fontFamily: fontSerif(s.summary ?? undefined) }]}>{s.summary || "—"}</Text>
                       {s.stats?.top_tags && s.stats.top_tags.length > 0 && (
                         <View style={styles.memoryTagsRow}>
                           {s.stats.top_tags.map((tag) => (
@@ -707,7 +708,7 @@ export default function ProfileScreen() {
                   </View>
                 )}
                 {expandedLevels.has(ws.id) && (
-                  <Text style={styles.memorySummaryText}>{ws.summary || "—"}</Text>
+                  <Text style={[styles.memorySummaryText, { fontFamily: fontSerif(ws.summary ?? undefined) }]}>{ws.summary || "—"}</Text>
                 )}
               </TouchableOpacity>
             ))}
@@ -746,8 +747,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: PROFILE_THEME.bg },
   centered: { justifyContent: "center", alignItems: "center" },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 20 },
-  title: { fontSize: 24, fontWeight: "600", marginBottom: 4, color: PROFILE_THEME.text },
-  hint: { fontSize: 14, color: PROFILE_THEME.textSecondary, marginBottom: 16 },
+  title: { fontSize: 24, fontWeight: "600", marginBottom: 4, color: PROFILE_THEME.text, fontFamily: FONT_SANS_BOLD },
+  hint: { fontSize: 16, color: PROFILE_THEME.textSecondary, marginBottom: 16, fontFamily: FONT_SANS_BOLD },
 
   card: {
     backgroundColor: "#fff",
@@ -761,12 +762,13 @@ const styles = StyleSheet.create({
     borderColor: PROFILE_THEME.accent + "40",
   },
   cardTitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
     letterSpacing: 1.2,
     color: "#3a3a38",
     textTransform: "uppercase",
     marginBottom: 12,
+    fontFamily: FONT_SANS_BOLD,
   },
   cardFooterActions: {
     flexDirection: "row",
@@ -797,6 +799,7 @@ const styles = StyleSheet.create({
     color: PROFILE_THEME.textSecondary,
     width: 70,
     flexShrink: 0,
+    fontFamily: FONT_SANS,
   },
   lifestyleChips: {
     flex: 1,
@@ -822,6 +825,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: PROFILE_THEME.textSecondary,
     flex: 0.45,
+    fontFamily: FONT_SANS,
   },
   fieldValue: {
     fontSize: 14,
@@ -829,6 +833,7 @@ const styles = StyleSheet.create({
     flex: 0.55,
     textAlign: "right",
     lineHeight: 20,
+    fontFamily: FONT_SANS,
   },
   separator: {
     height: StyleSheet.hairlineWidth,
@@ -841,6 +846,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: PROFILE_THEME.textSecondary,
     marginBottom: 8,
+    fontFamily: FONT_SANS,
   },
   tagWrap: {
     flexDirection: "row",
@@ -851,6 +857,7 @@ const styles = StyleSheet.create({
   tagEmpty: {
     fontSize: 13,
     color: PROFILE_THEME.textSecondary,
+    fontFamily: FONT_SANS,
   },
   chip: {
     flexDirection: "row",
@@ -873,14 +880,17 @@ const styles = StyleSheet.create({
     color: PROFILE_THEME.textSecondary,
     fontWeight: "400",
     flexShrink: 1,
+    fontFamily: FONT_SANS,
   },
   chipTextOn: {
     color: PROFILE_THEME.accent,
     fontWeight: "600",
+    fontFamily: FONT_SANS,
   },
   chipWarnText: {
     color: PROFILE_THEME.accent,
     fontWeight: "500",
+    fontFamily: FONT_SANS_MEDIUM,
   },
   chipRemove: {
     marginLeft: 0,
@@ -903,6 +913,7 @@ const styles = StyleSheet.create({
     color: PROFILE_THEME.text,
     minWidth: 120,
     maxWidth: 160,
+    fontFamily: FONT_SANS,
   },
   tagConfirmBtn: {
     width: 24,
@@ -934,6 +945,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     textAlign: "right",
+    fontFamily: FONT_SANS,
   },
 
   editField: {
@@ -943,6 +955,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: PROFILE_THEME.textSecondary,
     marginBottom: 6,
+    fontFamily: FONT_SANS,
   },
   section: {
     backgroundColor: PROFILE_THEME.bgCard,
@@ -960,11 +973,13 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: PROFILE_THEME.text,
     marginBottom: 14,
+    fontFamily: FONT_SANS_BOLD,
   },
   sectionHint: {
     fontSize: 14,
     color: PROFILE_THEME.textSecondary,
     marginBottom: 16,
+    fontFamily: FONT_SANS,
   },
   mockRow: { flexDirection: "row", gap: 10, flexWrap: "wrap", marginTop: 8 },
   mockBtn: {
@@ -976,8 +991,8 @@ const styles = StyleSheet.create({
     borderColor: PROFILE_THEME.border,
   },
   mockBtnActive: { backgroundColor: PROFILE_THEME.accent, borderColor: PROFILE_THEME.accent },
-  mockBtnText: { fontSize: 14, color: PROFILE_THEME.textSecondary },
-  mockBtnTextActive: { color: "#fff", fontWeight: "500" },
+  mockBtnText: { fontSize: 14, color: PROFILE_THEME.textSecondary, fontFamily: FONT_SANS },
+  mockBtnTextActive: { color: "#fff", fontWeight: "500", fontFamily: FONT_SANS_MEDIUM },
   mockBtnClear: {
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -986,10 +1001,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: PROFILE_THEME.border,
   },
-  mockBtnClearText: { fontSize: 14, color: PROFILE_THEME.textSecondary },
+  mockBtnClearText: { fontSize: 14, color: PROFILE_THEME.textSecondary, fontFamily: FONT_SANS },
   field: { marginBottom: 16 },
-  label: { fontSize: 14, color: PROFILE_THEME.textSecondary, marginBottom: 6 },
-  value: { fontSize: 14, color: PROFILE_THEME.text, lineHeight: 20 },
+  label: { fontSize: 14, color: PROFILE_THEME.textSecondary, marginBottom: 6, fontFamily: FONT_SANS },
+  value: { fontSize: 14, color: PROFILE_THEME.text, lineHeight: 20, fontFamily: FONT_SANS },
   input: {
     backgroundColor: PROFILE_THEME.bg,
     borderRadius: 12,
@@ -999,6 +1014,7 @@ const styles = StyleSheet.create({
     color: PROFILE_THEME.text,
     borderWidth: 1,
     borderColor: PROFILE_THEME.border,
+    fontFamily: FONT_SANS,
   },
   textArea: { minHeight: 80, textAlignVertical: "top" as const },
   pickerRow: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
@@ -1022,17 +1038,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: PROFILE_THEME.text,
+    fontFamily: FONT_SANS_BOLD,
   },
   docEntryCount: {
     fontSize: 12,
     color: PROFILE_THEME.accent,
     marginTop: 2,
+    fontFamily: FONT_SANS,
   },
   docEntryEmpty: {
     fontSize: 12,
     color: PROFILE_THEME.textSecondary,
     marginTop: 2,
     fontStyle: "italic",
+    fontFamily: FONT_SANS,
   },
   actions: {
     flexDirection: "row",
@@ -1053,8 +1072,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: PROFILE_THEME.border,
   },
-  btnTextPrimary: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  btnTextSecondary: { color: PROFILE_THEME.textSecondary, fontSize: 16, fontWeight: "600" },
+  btnTextPrimary: { color: "#fff", fontSize: 16, fontWeight: "600", fontFamily: FONT_SANS_BOLD },
+  btnTextSecondary: { color: PROFILE_THEME.textSecondary, fontSize: 16, fontWeight: "600", fontFamily: FONT_SANS_BOLD },
   btnIn: {
     paddingHorizontal: 24,
     paddingVertical: 14,
@@ -1071,8 +1090,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: PROFILE_THEME.border,
   },
-  btnTextIn: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  btnTextOut: { color: PROFILE_THEME.textSecondary, fontSize: 16, fontWeight: "600" },
+  btnTextIn: { color: "#fff", fontSize: 16, fontWeight: "600", fontFamily: FONT_SANS_BOLD },
+  btnTextOut: { color: PROFILE_THEME.textSecondary, fontSize: 16, fontWeight: "600", fontFamily: FONT_SANS_BOLD },
   uidBox: {
     backgroundColor: PROFILE_THEME.bgCard,
     borderRadius: 12,
@@ -1081,7 +1100,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: PROFILE_THEME.border,
   },
-  uidLabel: { fontSize: 12, color: PROFILE_THEME.textSecondary, marginBottom: 4 },
+  uidLabel: { fontSize: 12, color: PROFILE_THEME.textSecondary, marginBottom: 4, fontFamily: FONT_SANS },
   uidValue: {
     fontSize: 12,
     color: PROFILE_THEME.textSecondary,
@@ -1120,6 +1139,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: PROFILE_THEME.text,
+    fontFamily: FONT_SANS_BOLD,
   },
   memoryWindow: {
     fontSize: 12,
@@ -1136,6 +1156,7 @@ const styles = StyleSheet.create({
   memoryStat: {
     fontSize: 12,
     color: PROFILE_THEME.textSecondary,
+    fontFamily: FONT_SANS,
   },
   memoryTrendGood: { color: "#4caf80" },
   memoryTrendBad: { color: "#e05c5c" },
@@ -1144,6 +1165,7 @@ const styles = StyleSheet.create({
     color: PROFILE_THEME.textSecondary,
     marginTop: 4,
     fontStyle: "italic",
+    fontFamily: FONT_SANS,
   },
   memoryExpandedBody: {
     marginTop: 10,
@@ -1171,6 +1193,7 @@ const styles = StyleSheet.create({
   memoryTagText: {
     fontSize: 11,
     color: PROFILE_THEME.textSecondary,
+    fontFamily: FONT_SANS,
   },
   memorySnapshotsSection: {
     marginTop: 12,
@@ -1180,5 +1203,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: PROFILE_THEME.textSecondary,
     marginBottom: 8,
+    fontFamily: FONT_SANS_BOLD,
   },
 });

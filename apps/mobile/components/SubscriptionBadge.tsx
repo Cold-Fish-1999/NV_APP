@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet } from "react-native";
+import { FONT_SANS_BOLD } from "@/lib/fonts";
 import { useSubscription } from "@/contexts/subscription";
 
 const ACCENT = "#e07c3c";
@@ -38,6 +39,7 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 12,
     fontWeight: "600",
+    fontFamily: FONT_SANS_BOLD,
   },
   text_free: {
     color: "#9a9a9a",

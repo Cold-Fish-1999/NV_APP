@@ -13,6 +13,7 @@ import {
 import { router } from "expo-router";
 import { useAuth } from "@/contexts/auth";
 import { supabase } from "@/lib/supabase";
+import { FONT_SANS, FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
 import {
   canSendMagicLink,
   recordMagicLinkSent,
@@ -184,8 +185,8 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     width: "100%",
   },
-  title: { fontSize: 28, fontWeight: "600", marginBottom: 8, color: LOGIN_THEME.text },
-  hint: { fontSize: 15, color: LOGIN_THEME.muted, marginBottom: 28, lineHeight: 22 },
+  title: { fontSize: 28, fontWeight: "600", marginBottom: 8, color: LOGIN_THEME.text, fontFamily: FONT_SANS_BOLD },
+  hint: { fontSize: 15, color: LOGIN_THEME.muted, marginBottom: 28, lineHeight: 22, fontFamily: FONT_SANS },
   input: {
     height: 48,
     borderWidth: 1,
@@ -196,6 +197,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     backgroundColor: "#fff",
     color: LOGIN_THEME.text,
+    fontFamily: FONT_SANS,
   },
   btn: {
     height: 48,
@@ -205,9 +207,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   btnDisabled: { opacity: 0.7 },
-  btnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  sent: { color: "#2d7d46", fontSize: 15, marginBottom: 8 },
-  sentHint: { fontSize: 13, color: LOGIN_THEME.muted, marginBottom: 12 },
+  btnText: { color: "#fff", fontSize: 16, fontWeight: "600", fontFamily: FONT_SANS_BOLD },
+  sent: { color: "#2d7d46", fontSize: 15, marginBottom: 8, fontFamily: FONT_SANS },
+  sentHint: { fontSize: 13, color: LOGIN_THEME.muted, marginBottom: 12, fontFamily: FONT_SANS },
   resendBtn: { marginTop: 12, alignItems: "center" },
-  resendText: { fontSize: 13, color: LOGIN_THEME.accent, fontWeight: "500" },
+  resendText: { fontSize: 13, color: LOGIN_THEME.accent, fontWeight: "500", fontFamily: FONT_SANS_MEDIUM },
 });

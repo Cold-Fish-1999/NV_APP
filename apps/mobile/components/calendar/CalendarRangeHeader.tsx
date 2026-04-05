@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable } from "react-native";
 import { calendarTheme as theme } from "@/lib/calendarTheme";
+import { FONT_SANS_MEDIUM } from "@/lib/fonts";
 
 const RANGE_OPTIONS = [7, 14, 30, 60, 90, 180, 365] as const;
 
@@ -81,8 +82,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     backgroundColor: theme.bgCard,
   },
-  triggerText: { fontSize: 14, color: theme.text, fontWeight: "500" },
-  caret: { fontSize: 10, color: theme.textMuted },
+  triggerText: { fontSize: 14, fontFamily: FONT_SANS_MEDIUM, color: theme.text, fontWeight: "500" },
+  caret: { fontSize: 10, fontFamily: FONT_SANS_MEDIUM, color: theme.textMuted },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.3)",
@@ -107,6 +108,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   optionActive: { backgroundColor: theme.primaryLight },
-  optionText: { fontSize: 15, color: theme.text },
-  optionTextActive: { color: theme.primary, fontWeight: "500" },
+  optionText: { fontSize: 15, fontFamily: FONT_SANS_MEDIUM, color: theme.text },
+  optionTextActive: { color: theme.primary, fontWeight: "500", fontFamily: FONT_SANS_MEDIUM },
 });

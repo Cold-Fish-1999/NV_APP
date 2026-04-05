@@ -10,6 +10,7 @@ import {
   UIManager,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { FONT_SANS_BOLD } from "@/lib/fonts";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -74,6 +75,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: "#2D2D2D",
+    fontFamily: FONT_SANS_BOLD,
   },
   subtitle: {
     fontSize: 12,

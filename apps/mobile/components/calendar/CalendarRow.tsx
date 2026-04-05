@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { formatDateShort, formatWeekday } from "@/lib/dateUtils";
 import { TagPills } from "./TagPills";
 import type { DayAggregated } from "@/lib/calendarService";
+import { FONT_SANS_BOLD } from "@/lib/fonts";
 
 interface CalendarRowProps {
   day: DayAggregated;
@@ -34,6 +35,6 @@ const styles = StyleSheet.create({
   },
   left: { width: "25%", paddingRight: 12 },
   right: { flex: 1 },
-  date: { fontSize: 16, fontWeight: "600", color: "#1e293b" },
+  date: { fontSize: 16, fontWeight: "600", fontFamily: FONT_SANS_BOLD, color: "#1e293b" },
   weekday: { fontSize: 13, color: "#64748b", marginTop: 2 },
 });

@@ -35,6 +35,7 @@ import {
 } from "@/lib/calendarService";
 import { calendarTheme as theme } from "@/lib/calendarTheme";
 import { toLocalDateStr } from "@/lib/dateUtils";
+import { FONT_SANS, FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
 
 const MAX_DAYS_AGO = 7;
 const MONTH_ABBR = [
@@ -189,7 +190,7 @@ const whl = StyleSheet.create({
     height: StyleSheet.hairlineWidth, backgroundColor: theme.border, zIndex: 10, opacity: 0.45,
   },
   item: { height: SLOT_H, justifyContent: "center", alignItems: "center" },
-  txt: { fontSize: 13, color: theme.text, fontWeight: "500", fontVariant: ["tabular-nums"] },
+  txt: { fontSize: 13, fontFamily: FONT_SANS_MEDIUM, color: theme.text, fontWeight: "500", fontVariant: ["tabular-nums"] },
 });
 
 /* ------------------------------------------------------------------ */
@@ -677,6 +678,7 @@ const $ = StyleSheet.create({
   },
   metaText: {
     fontSize: 13,
+    fontFamily: FONT_SANS_MEDIUM,
     fontWeight: "500",
     color: theme.textMuted,
     fontVariant: ["tabular-nums"],
@@ -748,10 +750,12 @@ const $ = StyleSheet.create({
   chipTxt: {
     fontSize: 13,
     lineHeight: 18,
+    fontFamily: FONT_SANS,
     color: theme.textSecondary,
     fontWeight: "400",
   },
   chipTxtOn: {
+    fontFamily: FONT_SANS_BOLD,
     color: theme.primary,
     fontWeight: "600",
   },

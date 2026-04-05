@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet } from "react-native";
+import { FONT_SANS, FONT_SANS_BOLD } from "@/lib/fonts";
 import { SymptomTrendNav } from "./SymptomTrendNav";
 import { DonutChart } from "./DonutChart";
 import { ThingsToWatch } from "./ThingsToWatch";
@@ -40,21 +41,18 @@ export function MonthlyReport({ report }: Props) {
         <StatCell value={d.active_days} label="Active days" />
       </View>
 
-      {/* Comparison pills */}
-      <View style={styles.compRow}>
-        {d.vs_prev_month_pct !== null && (
+      {/* Comparison pill */}
+      {d.vs_prev_month_pct !== null && (
+        <View style={styles.compRow}>
           <CompPill label="vs last month" pct={d.vs_prev_month_pct} />
-        )}
-        {d.vs_two_months_pct !== null && (
-          <CompPill label="vs 2 months ago" pct={d.vs_two_months_pct} />
-        )}
-      </View>
+        </View>
+      )}
 
       {/* Symptom trends */}
       {d.top_symptoms.length > 0 && (
         <>
           <View style={styles.divider} />
-          <Text style={styles.sectionTitle}>Symptom trends — 3 months</Text>
+          <Text style={styles.sectionTitle}>Symptom trends</Text>
           <SymptomTrendNav
             items={d.top_symptoms.map((s) => ({
               name: s.name,
@@ -130,8 +128,14 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   statCell: { flex: 1 },
-  statValue: { fontSize: 26, fontWeight: "700", color: "#2D2D2D" },
-  statLabel: { fontSize: 12, color: "#9A9A9A", marginTop: 2 },
+  statValue: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#2D2D2D",
+    marginTop: 6,
+    fontFamily: FONT_SANS_BOLD,
+  },
+  statLabel: { fontSize: 13, color: "#9A9A9A", marginTop: 2, fontFamily: FONT_SANS },
   compRow: {
     flexDirection: "row",
     gap: 8,
@@ -145,8 +149,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 12,
   },
-  compLabel: { fontSize: 12, color: "#6B6B6B" },
-  compPct: { fontSize: 12, fontWeight: "700" },
+  compLabel: { fontSize: 13, color: "#6B6B6B", fontFamily: FONT_SANS },
+  compPct: { fontSize: 13, fontWeight: "700", fontFamily: FONT_SANS_BOLD },
   divider: {
     height: 1,
     backgroundColor: "#F0ECE6",
@@ -157,6 +161,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#2D2D2D",
     marginBottom: 14,
+    fontFamily: FONT_SANS_BOLD,
   },
   watchWrap: { marginTop: 8 },
 });

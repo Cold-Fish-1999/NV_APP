@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { calendarTheme as theme } from "@/lib/calendarTheme";
+import { FONT_SANS, FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
 import type { SymptomEntry } from "@/types/calendar";
 
 interface EntryActionSheetProps {
@@ -256,9 +257,10 @@ const styles = StyleSheet.create({
     borderColor: theme.primary,
     borderWidth: 1.5,
   },
-  previewText: { fontSize: 15, color: theme.text, lineHeight: 23 },
+  previewText: { fontSize: 15, fontFamily: FONT_SANS, color: theme.text, lineHeight: 23 },
   previewInput: {
     fontSize: 15,
+    fontFamily: FONT_SANS,
     color: theme.text,
     lineHeight: 23,
     minHeight: 60,
@@ -287,7 +289,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 14,
   },
-  actionLabel: { fontSize: 16, fontWeight: "500", color: theme.text },
+  actionLabel: { fontSize: 16, fontWeight: "500", fontFamily: FONT_SANS_MEDIUM, color: theme.text },
   divider: { height: 1, backgroundColor: theme.border, marginLeft: 64 },
 
   editButtons: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
@@ -299,12 +301,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.border,
   },
-  editBtnCancelText: { fontSize: 15, fontWeight: "500", color: theme.textSecondary },
+  editBtnCancelText: { fontSize: 15, fontWeight: "500", fontFamily: FONT_SANS_MEDIUM, color: theme.textSecondary },
   editBtnSave: {
     paddingVertical: 10,
     paddingHorizontal: 24,
     borderRadius: 10,
     backgroundColor: theme.primary,
   },
-  editBtnSaveText: { fontSize: 15, fontWeight: "600", color: "#fff" },
+  editBtnSaveText: { fontSize: 15, fontWeight: "600", fontFamily: FONT_SANS_BOLD, color: "#fff" },
 });

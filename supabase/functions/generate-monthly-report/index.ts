@@ -275,7 +275,7 @@ function computeStats(
 
   const sortedTags = Object.entries(tagFreqAll)
     .sort((a, b) => b[1] - a[1]);
-  const top5Tags = sortedTags.slice(0, 5).map(([name]) => name);
+  const top5Tags = sortedTags.filter(([, count]) => count >= 3).slice(0, 10).map(([name]) => name);
 
   // Weekly breakdown across 3-month window (~13 weeks)
   const threeMonthStart = startOfMonth(subMonths(reportMonthDate, 2));
@@ -308,8 +308,7 @@ function computeStats(
     };
   });
 
-  // Breakdown for donut chart: top 5 + "Other"
-  const top5Set = new Set(top5Tags);
+  // Breakdown for donut chart: current month's own top 5 + "Other"
   const tagFreqCurrent: Record<string, number> = {};
   for (const r of currentRows) {
     for (const t of r.tags ?? []) {
@@ -317,16 +316,13 @@ function computeStats(
     }
   }
 
+  const currentTop = Object.entries(tagFreqCurrent).sort((a, b) => b[1] - a[1]);
   const breakdown: { name: string; count: number }[] = [];
   let otherCount = 0;
-  for (const [tag, count] of Object.entries(tagFreqCurrent)) {
-    if (top5Set.has(tag)) {
-      breakdown.push({ name: tag, count });
-    } else {
-      otherCount += count;
-    }
+  for (let i = 0; i < currentTop.length; i++) {
+    if (i < 5) breakdown.push({ name: currentTop[i][0], count: currentTop[i][1] });
+    else otherCount += currentTop[i][1];
   }
-  breakdown.sort((a, b) => b.count - a.count);
   if (otherCount > 0) {
     breakdown.push({ name: "Other", count: otherCount });
   }

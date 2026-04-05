@@ -2,6 +2,7 @@ import { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Platform } from "react-native";
 import { formatTime } from "@/lib/dateUtils";
 import { calendarTheme as theme } from "@/lib/calendarTheme";
+import { FONT_SANS_BOLD } from "@/lib/fonts";
 import type { SymptomEntry } from "@/types/calendar";
 import { TIME_SLOTS } from "@/lib/dateUtils";
 
@@ -184,7 +185,7 @@ export function TimeSlotSection({
 
 const styles = StyleSheet.create({
   section: { marginBottom: 28 },
-  sectionTitle: { fontSize: 14, fontWeight: "600", marginBottom: 12 },
+  sectionTitle: { fontSize: 14, fontWeight: "600", fontFamily: FONT_SANS_BOLD, marginBottom: 12 },
   entry: {
     flexDirection: "row",
     marginBottom: 10,

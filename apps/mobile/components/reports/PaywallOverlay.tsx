@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { FONT_SANS_BOLD } from "@/lib/fonts";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -53,6 +54,7 @@ const styles = StyleSheet.create({
     color: "#2D2D2D",
     marginTop: 14,
     textAlign: "center",
+    fontFamily: FONT_SANS_BOLD,
   },
   subtitle: {
     fontSize: 14,
@@ -72,5 +74,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontWeight: "700",
+    fontFamily: FONT_SANS_BOLD,
   },
 });

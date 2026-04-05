@@ -3,6 +3,7 @@ import { Text, TouchableOpacity, StyleSheet, ScrollView, Animated } from "react-
 import { formatDateShort, formatWeekday } from "@/lib/dateUtils";
 import type { DayAggregated } from "@/lib/calendarService";
 import { calendarTheme as theme } from "@/lib/calendarTheme";
+import { FONT_SANS_BOLD } from "@/lib/fonts";
 
 export const ROW_HEIGHT = 70;
 
@@ -94,7 +95,7 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  date: { fontSize: 14, fontWeight: "600", color: theme.textSecondary },
+  date: { fontSize: 14, fontWeight: "600", fontFamily: FONT_SANS_BOLD, color: theme.textSecondary },
   weekday: { fontSize: 12, color: theme.textMuted, marginTop: 2 },
   textSelected: { color: theme.primary },
 });

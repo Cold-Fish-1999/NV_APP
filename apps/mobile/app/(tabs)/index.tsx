@@ -27,6 +27,15 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
+import {
+  FONT_SANS,
+  FONT_SANS_MEDIUM,
+  FONT_SANS_BOLD,
+  FONT_SERIF,
+  FONT_SERIF_BOLD,
+  fontSerif,
+  fontSerifBold,
+} from "@/lib/fonts";
 import { useHeaderHeight } from "@/components/SharedHeader";
 import { useAuth } from "@/contexts/auth";
 import { useSubscription } from "@/contexts/subscription";
@@ -518,12 +527,11 @@ export default function ChatScreen() {
     };
   }, [recording]);
 
-  const mdStyles = useMemo(() => ({
-    body: { color: CHAT_THEME.assistantText, fontSize: 16, lineHeight: 26 },
+  const mdStylesBase = useMemo(() => ({
     paragraph: { marginTop: 0, marginBottom: 8 },
-    heading1: { fontSize: 22, fontWeight: "700" as const, marginBottom: 8, marginTop: 12, color: CHAT_THEME.assistantText },
-    heading2: { fontSize: 19, fontWeight: "600" as const, marginBottom: 6, marginTop: 10, color: CHAT_THEME.assistantText },
-    heading3: { fontSize: 17, fontWeight: "600" as const, marginBottom: 4, marginTop: 8, color: CHAT_THEME.assistantText },
+    heading1: { fontSize: 22, fontWeight: "700" as const, marginBottom: 8, marginTop: 12, color: CHAT_THEME.assistantText, fontFamily: FONT_SERIF_BOLD },
+    heading2: { fontSize: 19, fontWeight: "600" as const, marginBottom: 6, marginTop: 10, color: CHAT_THEME.assistantText, fontFamily: FONT_SERIF_BOLD },
+    heading3: { fontSize: 17, fontWeight: "600" as const, marginBottom: 4, marginTop: 8, color: CHAT_THEME.assistantText, fontFamily: FONT_SERIF_BOLD },
     strong: { fontWeight: "600" as const },
     em: { fontStyle: "italic" as const },
     link: { color: CHAT_THEME.accent, textDecorationLine: "none" as const },
@@ -536,6 +544,12 @@ export default function ChatScreen() {
     list_item: { marginVertical: 2 },
     hr: { backgroundColor: CHAT_THEME.border, height: 1, marginVertical: 12 },
   }), []);
+
+  const getMdStyles = useCallback((text: string) => ({
+    ...mdStylesBase,
+    body: { color: CHAT_THEME.assistantText, fontSize: 16, lineHeight: 26, fontFamily: fontSerif(text) },
+    strong: { fontWeight: "700" as const, fontFamily: fontSerifBold(text) },
+  }), [mdStylesBase]);
 
   const renderItem = useCallback(
     ({ item }: { item: Message }) => {
@@ -581,7 +595,7 @@ export default function ChatScreen() {
                         ✦ Based on your full health history
                       </Text>
                     )}
-                    <Markdown style={mdStyles}>{item.content}</Markdown>
+                    <Markdown style={getMdStyles(item.content)}>{item.content}</Markdown>
                     <TouchableOpacity
                       style={styles.copyIcon}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -817,7 +831,7 @@ const styles = StyleSheet.create({
   },
   emptyStateText: {
     fontSize: 26,
-    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontFamily: FONT_SERIF,
     color: "#2d2d2d",
     fontWeight: "400",
     textAlign: "center",
@@ -839,7 +853,7 @@ const styles = StyleSheet.create({
     maxWidth: "100%",
     paddingRight: 0,
   },
-  userText: { color: CHAT_THEME.userText, fontSize: 16, lineHeight: 26, fontWeight: "400" },
+  userText: { color: CHAT_THEME.userText, fontSize: 16, lineHeight: 26, fontWeight: "400", fontFamily: FONT_SANS },
   assistantText: {
     color: CHAT_THEME.assistantText,
     fontSize: 16,
@@ -852,6 +866,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginBottom: 6,
     letterSpacing: 0.3,
+    fontFamily: FONT_SANS_BOLD,
   },
   copyIcon: {
     alignSelf: "flex-start",
@@ -870,8 +885,9 @@ const styles = StyleSheet.create({
     color: CHAT_THEME.accent,
     fontWeight: "500",
     letterSpacing: 0.15,
+    fontFamily: FONT_SANS_MEDIUM,
   },
-  timeText: { fontSize: 12, marginTop: 6, color: CHAT_THEME.time },
+  timeText: { fontSize: 12, marginTop: 6, color: CHAT_THEME.time, fontFamily: FONT_SANS },
   userTimeText: { textAlign: "right", paddingRight: 4 },
   assistantTimeText: { textAlign: "left", paddingLeft: 0 },
   msgImagesRow: { marginBottom: 8 },
@@ -980,7 +996,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   holdToTalkBtnPressed: { backgroundColor: "#c96a2a" },
-  holdToTalkBtnText: { fontSize: 14, color: "#fff", fontWeight: "500" },
+  holdToTalkBtnText: { fontSize: 14, color: "#fff", fontWeight: "500", fontFamily: FONT_SANS_MEDIUM },
   inputBoxBtn: {
     width: 40,
     height: 40,
@@ -988,7 +1004,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  inputBoxBtnPlus: { fontSize: 24, color: CHAT_THEME.muted, fontWeight: "300", lineHeight: 24 },
+  inputBoxBtnPlus: { fontSize: 24, color: CHAT_THEME.muted, fontWeight: "300", lineHeight: 24, fontFamily: FONT_SANS },
   inputBoxBtnDisabled: { opacity: 0.5 },
   inputBoxSendBtn: {
     width: 40,
@@ -999,7 +1015,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  inputBoxSendBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  inputBoxSendBtnText: { color: "#fff", fontSize: 16, fontWeight: "600", fontFamily: FONT_SANS_BOLD },
   inputBoxSendBtnDisabled: { backgroundColor: CHAT_THEME.accentMuted, opacity: 0.6 },
   inputBoxMicBtn: {
     width: 40,
@@ -1030,6 +1046,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     color: CHAT_THEME.assistantText,
+    fontFamily: FONT_SANS,
   },
   inputMeasure: {
     position: "absolute",
@@ -1043,6 +1060,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingTop: 6,
     paddingBottom: 10,
+    fontFamily: FONT_SANS,
   },
 
 });

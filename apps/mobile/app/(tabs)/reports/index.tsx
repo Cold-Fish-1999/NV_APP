@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@/components/SharedHeader";
+import { FONT_SANS, FONT_SANS_BOLD,FONT_SANS_SEMIBOLD } from "@/lib/fonts";
 import { useAuth } from "@/contexts/auth";
 import { useSubscription } from "@/contexts/subscription";
 import { useReportTab } from "@/contexts/reportTab";
@@ -27,7 +28,7 @@ import { PaywallOverlay } from "@/components/reports/PaywallOverlay";
 const TREND_BADGE = {
   improving: { label: "↑ Improving", bg: "#EAF3DE", color: "#3B6D11" },
   stable: { label: "→ Stable", bg: "#F0ECE6", color: "#6B6B6B" },
-  worsening: { label: "↓ Worsening", bg: "#FCEBEB", color: "#A32D2D" },
+  worsening: { label: " Needs attention", bg: "#FCEBEB", color: "#A32D2D" },
 } as const;
 
 function formatWeekRange(start: string, end: string): string {
@@ -290,9 +291,10 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   accordionTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "600",
     color: "#2D2D2D",
+    fontFamily: FONT_SANS_BOLD,
   },
   accordionTitleOpen: {
     color: "#D85A30",
@@ -301,6 +303,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#9A9A9A",
     marginTop: 2,
+    fontFamily: FONT_SANS,
   },
   accordionRight: {
     flexDirection: "row",
@@ -313,8 +316,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   trendBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "600",
+    fontFamily: FONT_SANS_SEMIBOLD,
   },
   emptyWrap: {
     paddingVertical: 60,
@@ -325,5 +329,6 @@ const styles = StyleSheet.create({
     color: "#9A9A9A",
     textAlign: "center",
     lineHeight: 22,
+    fontFamily: FONT_SANS,
   },
 });

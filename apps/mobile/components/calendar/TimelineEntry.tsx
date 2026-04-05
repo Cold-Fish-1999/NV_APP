@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import * as Haptics from "expo-haptics";
 import { calendarTheme as theme } from "@/lib/calendarTheme";
+import { fontSerif } from "@/lib/fonts";
 import type { SymptomEntry } from "@/types/calendar";
 
 interface TimelineEntryProps {
@@ -21,7 +22,7 @@ export function TimelineEntry({ entry, onLongPress }: TimelineEntryProps) {
         onLongPress={handleLongPress}
         delayLongPress={350}
       >
-        <Text style={styles.summary}>{entry.summary}</Text>
+        <Text style={[styles.summary, { fontFamily: fontSerif(entry.summary) }]}>{entry.summary}</Text>
       </Pressable>
     </View>
   );

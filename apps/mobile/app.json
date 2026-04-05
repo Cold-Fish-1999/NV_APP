@@ -30,12 +30,18 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.nvapp.mobile",
-      "permissions": ["RECORD_AUDIO", "ACCESS_COARSE_LOCATION"]
+      "permissions": [
+        "RECORD_AUDIO",
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
       "output": "static"
     },
-    "plugins": ["expo-router"]
+    "plugins": [
+      "expo-router",
+      "expo-font"
+    ]
   }
 }

@@ -22,6 +22,15 @@ importers:
       '@babel/runtime':
         specifier: ^7.26.0
         version: 7.28.6
+      '@expo-google-fonts/dm-sans':
+        specifier: ^0.4.2
+        version: 0.4.2
+      '@expo-google-fonts/lora':
+        specifier: ^0.4.2
+        version: 0.4.2
+      '@expo-google-fonts/noto-serif-sc':
+        specifier: ^0.4.3
+        version: 0.4.3
       '@nvapp/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -46,6 +55,9 @@ importers:
       expo-clipboard:
         specifier: ~8.0.8
         version: 8.0.8(expo@54.0.33)(react-native@0.81.0(patch_hash=33lcpycdhqpy2jwz5ijm6wegqe)(@babel/core@7.29.0)(@react-native/metro-config@0.84.0(@babel/core@7.29.0))(@types/react@19.0.14)(react@19.1.0))(react@19.1.0)
+      expo-font:
+        specifier: ~14.0.11
+        version: 14.0.11(expo@54.0.33)(react-native@0.81.0(patch_hash=33lcpycdhqpy2jwz5ijm6wegqe)(@babel/core@7.29.0)(@react-native/metro-config@0.84.0(@babel/core@7.29.0))(@types/react@19.0.14)(react@19.1.0))(react@19.1.0)
       expo-haptics:
         specifier: ~15.0.8
         version: 15.0.8(expo@54.0.33)
@@ -64,6 +76,9 @@ importers:
       expo-router:
         specifier: ~5.0.0
         version: 5.0.7(jliqhabnj37udwd3u5auiynkve)
+      expo-splash-screen:
+        specifier: ~31.0.13
+        version: 31.0.13(expo@54.0.33)
       expo-status-bar:
         specifier: ~2.0.0
         version: 2.0.1(react-native@0.81.0(patch_hash=33lcpycdhqpy2jwz5ijm6wegqe)(@babel/core@7.29.0)(@react-native/metro-config@0.84.0(@babel/core@7.29.0))(@types/react@19.0.14)(react@19.1.0))(react@19.1.0)
@@ -878,6 +893,15 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@expo-google-fonts/dm-sans@0.4.2':
+    resolution: {integrity: sha512-e/fLH5aCJzkEenz7axvEn8N7IJAKhUwNjIxS75h9j+Ip1M9S7d22M19gJN3A7QW4egVkBJRyQh1hQFhngQn9yA==}
+
+  '@expo-google-fonts/lora@0.4.2':
+    resolution: {integrity: sha512-Bnofh2mIOUKp4KUS48VjaBgug4lQOcw/ftU0NFv5OPtiutL422//G1v63xDZEMUEL6ft4fi5q94/uKcpDjbPag==}
+
+  '@expo-google-fonts/noto-serif-sc@0.4.3':
+    resolution: {integrity: sha512-fSmUpiSFtSeyHV45/2xUOy5SdfExklQwwMKN3cQjAZAujITHDmSbpMHCVdCMhRqMjQtu0ZRgc29u8A+CU3akfw==}
 
   '@expo/cli@54.0.23':
     resolution: {integrity: sha512-km0h72SFfQCmVycH/JtPFTVy69w6Lx1cHNDmfLfQqgKFYeeHTjx7LVDP4POHCtNxFP2UeRazrygJhlh4zz498g==}
@@ -2625,6 +2649,11 @@ packages:
   expo-server@1.0.5:
     resolution: {integrity: sha512-IGR++flYH70rhLyeXF0Phle56/k4cee87WeQ4mamS+MkVAVP+dDlOHf2nN06Z9Y2KhU0Gp1k+y61KkghF7HdhA==}
     engines: {node: '>=20.16.0'}
+
+  expo-splash-screen@31.0.13:
+    resolution: {integrity: sha512-1epJLC1cDlwwj089R2h8cxaU5uk4ONVAC+vzGiTZH4YARQhL4Stlz1MbR6yAS173GMosvkE6CAeihR7oIbCkDA==}
+    peerDependencies:
+      expo: '*'
 
   expo-status-bar@2.0.1:
     resolution: {integrity: sha512-AkIPX7jWHRPp83UBZ1iXtVvyr0g+DgBVvIXTtlmPtmUsm8Vq9Bb5IGj86PW8osuFlgoTVAg7HI/+Ok7yEYwiRg==}
@@ -5473,6 +5502,12 @@ snapshots:
   '@esbuild/win32-x64@0.27.3':
     optional: true
 
+  '@expo-google-fonts/dm-sans@0.4.2': {}
+
+  '@expo-google-fonts/lora@0.4.2': {}
+
+  '@expo-google-fonts/noto-serif-sc@0.4.3': {}
+
   '@expo/cli@54.0.23(expo-router@5.0.7)(expo@54.0.33)(react-native@0.81.0(patch_hash=33lcpycdhqpy2jwz5ijm6wegqe)(@babel/core@7.29.0)(@react-native/metro-config@0.84.0(@babel/core@7.29.0))(@types/react@19.0.14)(react@19.1.0))':
     dependencies:
       '@0no-co/graphql.web': 1.2.0
@@ -6425,7 +6460,9 @@ snapshots:
       metro-runtime: 0.83.4
     transitivePeerDependencies:
       - '@babel/core'
+      - bufferutil
       - supports-color
+      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
@@ -7636,6 +7673,13 @@ snapshots:
       - supports-color
 
   expo-server@1.0.5: {}
+
+  expo-splash-screen@31.0.13(expo@54.0.33):
+    dependencies:
+      '@expo/prebuild-config': 54.0.8(expo@54.0.33)
+      expo: 54.0.33(@babel/core@7.29.0)(@expo/metro-runtime@5.0.4(react-native@0.81.0(patch_hash=33lcpycdhqpy2jwz5ijm6wegqe)(@babel/core@7.29.0)(@react-native/metro-config@0.84.0(@babel/core@7.29.0))(@types/react@19.0.14)(react@19.1.0)))(expo-router@5.0.7)(react-native@0.81.0(patch_hash=33lcpycdhqpy2jwz5ijm6wegqe)(@babel/core@7.29.0)(@react-native/metro-config@0.84.0(@babel/core@7.29.0))(@types/react@19.0.14)(react@19.1.0))(react@19.1.0)
+    transitivePeerDependencies:
+      - supports-color
 
   expo-status-bar@2.0.1(react-native@0.81.0(patch_hash=33lcpycdhqpy2jwz5ijm6wegqe)(@babel/core@7.29.0)(@react-native/metro-config@0.84.0(@babel/core@7.29.0))(@types/react@19.0.14)(react@19.1.0))(react@19.1.0):
     dependencies:

@@ -147,7 +147,16 @@ const LOG_SYMPTOM_TOOL = {
       keywords: {
         type: "array",
         items: { type: "string" },
-        description: "Short symptom/feeling keyword tags extracted from the description",
+        description:
+          "Symptom/feeling keyword tags ONLY. Rules: " +
+          "1) Only include keywords for actual symptoms or physical/emotional feelings " +
+          "(e.g. 'headache', 'fatigue', 'anxiety', '头痛', '失眠', '焦虑'). " +
+          "2) If the record is about food intake, exercise, medication, or other " +
+          "health behaviors with NO symptom or feeling mentioned, return an empty array []. " +
+          "3) Use short, generic, canonical terms (e.g. 'headache' not 'splitting headache', " +
+          "'头痛' not '头疼得厉害'). Downstream normalization will map variants, " +
+          "but prefer standard terms when possible. " +
+          "4) One keyword per distinct symptom; avoid duplicates or overlapping terms.",
       },
       severity: {
         type: "string",

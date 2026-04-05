@@ -1,36 +1,18 @@
 /**
- * DB-backed, self-evolving keyword normalization pipeline.
+ * DB-backed, self-evolving keyword normalization (Node.js version).
  *
- * Flow:
- *   1. Load taxonomy from DB (taxonomy_standards + taxonomy_variants)
- *   2. Local matching against DB taxonomy
- *   3. Unmatched → check DB for recently processed variants (dedup)
- *   4. Still unmatched → group by language → AI per language:
- *      a) Map to existing standard keys → add as new variants
- *      b) Cluster into new standard keys → add new entries
- *   5. Write new mappings to DB (ON CONFLICT DO NOTHING)
- *   6. Log AI decisions to taxonomy_ai_logs
- *   7. Re-match with updated taxonomy
+ * Same logic as supabase/functions/_shared/normalizeKeywords.ts but for Node.
  */
-import { detectLang, type Lang } from "./symptomTaxonomy.ts";
-import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { detectLang, type Lang } from "./symptomTaxonomy";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const HAIKU_MODEL = "claude-haiku-4-5-20251001";
 
-// ── DB Taxonomy Loader ────────────────────────────────────────
-
-interface TaxonomyEntry {
-  standardId: string;
-  standardKey: string;
-  variant: string;
-  lang: Lang;
-}
-
 interface LoadedTaxonomy {
-  byVariant: Map<string, string>; // "lang:variant_lower" → standardKey
-  standardsByLang: Map<string, Map<string, string>>; // lang → { key → id }
+  byVariant: Map<string, string>;
+  standardsByLang: Map<string, Map<string, string>>;
 }
 
 async function loadTaxonomy(supabase: SupabaseClient): Promise<LoadedTaxonomy> {
@@ -65,11 +47,9 @@ function matchLocal(taxonomy: LoadedTaxonomy, keyword: string): string | null {
   return taxonomy.byVariant.get(key) ?? null;
 }
 
-// ── AI Expansion ──────────────────────────────────────────────
-
 interface AiExpansionResult {
-  map_to_existing: Record<string, string>; // variant → existing standard key
-  new_variants_for_existing: Record<string, string[]>; // standard key → new variants to add
+  map_to_existing: Record<string, string>;
+  new_variants_for_existing: Record<string, string[]>;
   new_clusters: Array<{ standard: string; variants: string[] }>;
   unmapped: string[];
 }
@@ -141,10 +121,8 @@ Rules:
       return null;
     }
 
-    const data = (await res.json()) as {
-      content: Array<{ type: string; text?: string }>;
-    };
-    const text = data.content?.find((b) => b.type === "text")?.text ?? "{}";
+    const data = await res.json();
+    const text = data.content?.find((b: any) => b.type === "text")?.text ?? "{}";
     const cleaned = text.replace(/```json|```/g, "").trim();
     return JSON.parse(cleaned) as AiExpansionResult;
   } catch (e) {
@@ -153,19 +131,16 @@ Rules:
   }
 }
 
-// ── DB Write (idempotent) ─────────────────────────────────────
-
 async function writeExpansion(
   supabase: SupabaseClient,
   lang: Lang,
   result: AiExpansionResult,
   standardsMap: Map<string, string>,
-  requestId?: string,
-): Promise<{ applied: Record<string, unknown>; skipped: string[] }> {
+  requestId: string,
+): Promise<{ applied: Record<string, string>; skipped: string[] }> {
   const applied: Record<string, string> = {};
   const skipped: string[] = [];
 
-  // 1) Add new variants for existing standards
   for (const [variant, standardKey] of Object.entries(result.map_to_existing)) {
     const stdId = standardsMap.get(standardKey);
     if (!stdId) {
@@ -180,7 +155,7 @@ async function writeExpansion(
         variant,
         lang,
         source: "ai",
-        created_by: requestId ?? "ai-expand",
+        created_by: requestId,
       })
       .select("id")
       .maybeSingle();
@@ -194,7 +169,6 @@ async function writeExpansion(
     }
   }
 
-  // 2) Create new standard keys + their variants
   for (const cluster of result.new_clusters ?? []) {
     const { data: stdRow, error: stdErr } = await supabase
       .from("taxonomy_standards")
@@ -220,7 +194,7 @@ async function writeExpansion(
           variant: v,
           lang,
           source: "ai",
-          created_by: requestId ?? "ai-expand",
+          created_by: requestId,
         })
         .select("id")
         .maybeSingle();
@@ -238,25 +212,21 @@ async function writeExpansion(
   return { applied, skipped };
 }
 
-// ── Main Pipeline ─────────────────────────────────────────────
-
-export async function normalizeKeywordsBatch(
+export async function normalizeKeywordsFromDb(
   rawKeywords: string[],
   anthropicApiKey: string,
-  supabaseUrl?: string,
-  supabaseServiceKey?: string,
+  supabaseUrl: string,
+  supabaseServiceKey: string,
 ): Promise<Record<string, string>> {
-  const url = supabaseUrl ?? Deno.env.get("SUPABASE_URL")!;
-  const key = supabaseServiceKey ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const supabase = createClient(url, key, { auth: { persistSession: false } });
+  const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: { persistSession: false },
+  });
   const requestId = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
-  // Step 1: Load taxonomy from DB
   let taxonomy = await loadTaxonomy(supabase);
   const mapping: Record<string, string> = {};
   const unmatched: string[] = [];
 
-  // Step 2: Local matching
   for (const raw of rawKeywords) {
     const matched = matchLocal(taxonomy, raw);
     if (matched) {
@@ -268,7 +238,6 @@ export async function normalizeKeywordsBatch(
 
   if (unmatched.length === 0) return mapping;
 
-  // Step 3: Check DB for already-existing variants (dedup)
   const unique = [...new Set(unmatched)];
   const stillUnmatched: string[] = [];
 
@@ -292,7 +261,6 @@ export async function normalizeKeywordsBatch(
     return mapping;
   }
 
-  // Step 4: Group by language → AI per language
   const byLang = new Map<Lang, string[]>();
   for (const kw of stillUnmatched) {
     const lang = detectLang(kw);
@@ -304,20 +272,17 @@ export async function normalizeKeywordsBatch(
     const standards = taxonomy.standardsByLang.get(lang);
     const existingKeys = standards ? [...standards.keys()] : [];
 
-    // Step 4a: Call AI
     const aiResult = await callAiExpand(keywords, lang, existingKeys, anthropicApiKey);
     if (!aiResult) {
       for (const kw of keywords) mapping[kw] = kw;
       continue;
     }
 
-    // Step 4b: Write expansions to DB
     const standardsMap = standards ?? new Map<string, string>();
     const { applied, skipped } = await writeExpansion(
       supabase, lang, aiResult, standardsMap, requestId,
     );
 
-    // Step 4c: Log AI decision
     await supabase.from("taxonomy_ai_logs").insert({
       lang,
       input_keywords: keywords,
@@ -327,10 +292,11 @@ export async function normalizeKeywordsBatch(
       request_id: requestId,
     });
 
-    console.info(`[taxonomy-ai] ${lang}: ${keywords.length} input → ${Object.keys(applied).length} applied, ${skipped.length} skipped`);
+    console.info(
+      `[taxonomy-ai] ${lang}: ${keywords.length} input → ${Object.keys(applied).length} applied, ${skipped.length} skipped`,
+    );
   }
 
-  // Step 5: Reload taxonomy and re-match
   taxonomy = await loadTaxonomy(supabase);
 
   for (const kw of stillUnmatched) {
@@ -340,12 +306,4 @@ export async function normalizeKeywordsBatch(
   }
 
   return mapping;
-}
-
-export function applyMapping(
-  tags: string[],
-  mapping: Record<string, string>,
-): string[] {
-  const normalized = tags.map((t) => mapping[t] ?? t);
-  return [...new Set(normalized)];
 }

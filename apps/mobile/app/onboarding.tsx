@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   Animated,
-  Platform,
   Pressable,
   Alert,
 } from "react-native";
@@ -22,11 +21,10 @@ import {
 } from "@/lib/onboardingInsight";
 import { supabase } from "@/lib/supabase";
 import { upsertHealthProfile } from "@/lib/profileService";
+import { FONT_SANS, FONT_SANS_MEDIUM, FONT_SANS_BOLD, FONT_SERIF } from "@/lib/fonts";
 
 const ONBOARDING_KEY = "nvapp_onboarding_done";
 const ONBOARDING_SURVEY_KEY = "nvapp_onboarding_survey";
-
-const SERIF = Platform.OS === "ios" ? "Georgia" : "serif";
 
 export type { OnboardingSurvey } from "@/lib/onboardingInsight";
 
@@ -839,6 +837,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: THEME.accent,
     fontWeight: "500",
+    fontFamily: FONT_SANS_MEDIUM,
   },
   scrollWrap: { flex: 1 },
   page: { flex: 1, paddingHorizontal: 28 },
@@ -858,7 +857,7 @@ const styles = StyleSheet.create({
   pagePadding: { paddingTop: 48, paddingBottom: 24 },
   page1Title: {
     fontSize: 28,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontWeight: "600",
     color: THEME.text,
     textAlign: "center",
@@ -868,14 +867,14 @@ const styles = StyleSheet.create({
   page1SubtitleWrap: { marginBottom: 48 },
   page1Subtitle: {
     fontSize: 17,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     color: THEME.textMuted,
     textAlign: "center",
     lineHeight: 26,
   },
   page2Label: {
     fontSize: 14,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontWeight: "600",
     color: THEME.textMuted,
     textTransform: "uppercase",
@@ -884,7 +883,7 @@ const styles = StyleSheet.create({
   },
   page2Question: {
     fontSize: 22,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontWeight: "600",
     color: THEME.text,
     lineHeight: 30,
@@ -892,7 +891,7 @@ const styles = StyleSheet.create({
   },
   page2Fact: {
     fontSize: 18,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontStyle: "italic",
     color: THEME.accent,
     marginBottom: 20,
@@ -900,13 +899,13 @@ const styles = StyleSheet.create({
   page2BodyWrap: { marginBottom: 32 },
   page2Body: {
     fontSize: 16,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     color: THEME.textMuted,
     lineHeight: 26,
   },
   page3Title: {
     fontSize: 24,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontWeight: "600",
     color: THEME.text,
     marginBottom: 24,
@@ -922,20 +921,20 @@ const styles = StyleSheet.create({
   },
   page3BlockTitle: {
     fontSize: 16,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontWeight: "600",
     color: THEME.text,
     marginBottom: 8,
   },
   page3BlockText: {
     fontSize: 15,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     color: THEME.textMuted,
     lineHeight: 24,
   },
   page3Bullet: {
     fontSize: 15,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     color: THEME.textMuted,
     lineHeight: 24,
     marginLeft: 8,
@@ -943,14 +942,14 @@ const styles = StyleSheet.create({
   },
   page3Closing: {
     fontSize: 14,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontStyle: "italic",
     color: THEME.textMuted,
     marginBottom: 32,
   },
   page4Title: {
     fontSize: 26,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontWeight: "600",
     color: THEME.text,
     marginBottom: 20,
@@ -958,21 +957,21 @@ const styles = StyleSheet.create({
   page4TextWrap: { marginBottom: 20 },
   page4Text: {
     fontSize: 17,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     color: THEME.textMuted,
     lineHeight: 26,
   },
   page4ListWrap: { marginBottom: 28 },
   page4Item: {
     fontSize: 16,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     color: THEME.text,
     lineHeight: 28,
   },
   page4NoteWrap: { marginBottom: 32 },
   page4Note: {
     fontSize: 14,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontStyle: "italic",
     color: THEME.textMuted,
     lineHeight: 22,
@@ -985,7 +984,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  btnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  btnText: { color: "#fff", fontSize: 16, fontWeight: "600", fontFamily: FONT_SANS_BOLD },
   dots: {
     flexDirection: "row",
     justifyContent: "center",
@@ -1013,7 +1012,7 @@ const styles = StyleSheet.create({
   },
   page5IntroTitle: {
     fontSize: 26,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS_BOLD,
     fontWeight: "600",
     color: THEME.text,
     textAlign: "center",
@@ -1022,7 +1021,7 @@ const styles = StyleSheet.create({
   },
   page5IntroSub: {
     fontSize: 18,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS,
     color: THEME.textMuted,
     textAlign: "center",
   },
@@ -1041,36 +1040,36 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 12,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS,
     color: THEME.textMuted,
     marginTop: 6,
   },
   surveyPage: { paddingBottom: 40 },
   surveyTitle: {
     fontSize: 24,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS_BOLD,
     fontWeight: "600",
     color: THEME.text,
     marginBottom: 8,
   },
   surveySubtitle: {
     fontSize: 15,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS,
     color: THEME.textMuted,
     marginBottom: 24,
     lineHeight: 22,
   },
   surveyQuestion: {
     fontSize: 18,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS_BOLD,
     fontWeight: "600",
     color: THEME.text,
     marginBottom: 16,
   },
-  surveyHint: { fontSize: 13, color: THEME.textMuted, marginBottom: 12 },
+  surveyHint: { fontSize: 13, color: THEME.textMuted, marginBottom: 12, fontFamily: FONT_SANS },
   surveySubLabel: {
     fontSize: 14,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS_BOLD,
     fontWeight: "600",
     color: THEME.textMuted,
     marginTop: 16,
@@ -1089,14 +1088,14 @@ const styles = StyleSheet.create({
     borderColor: THEME.accent,
     backgroundColor: "#fef5f0",
   },
-  optionBtnText: { fontSize: 16, fontFamily: SERIF, color: THEME.text },
-  optionBtnTextActive: { color: THEME.accent, fontWeight: "600" },
+  optionBtnText: { fontSize: 16, fontFamily: FONT_SANS, color: THEME.text },
+  optionBtnTextActive: { color: THEME.accent, fontWeight: "600", fontFamily: FONT_SANS_BOLD },
   surveyBtn: { marginTop: 28 },
   btnDisabled: { opacity: 0.5 },
   analysisPage: { justifyContent: "center", alignItems: "center" },
   analysisTitle: {
     fontSize: 20,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS_BOLD,
     fontWeight: "600",
     color: THEME.text,
     marginBottom: 24,
@@ -1117,13 +1116,13 @@ const styles = StyleSheet.create({
   },
   analysisStep: {
     fontSize: 15,
-    fontFamily: SERIF,
+    fontFamily: FONT_SANS,
     color: THEME.textMuted,
   },
   resultsPage: { paddingBottom: 40 },
   resultsTitle: {
     fontSize: 24,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontWeight: "600",
     color: THEME.text,
     marginBottom: 24,
@@ -1131,11 +1130,11 @@ const styles = StyleSheet.create({
   resultsList: { marginBottom: 32 },
   resultsItem: { flexDirection: "row", marginBottom: 12, alignItems: "flex-start" },
   resultsBullet: { fontSize: 16, color: THEME.accent, marginRight: 8 },
-  resultsText: { flex: 1, fontSize: 16, fontFamily: SERIF, color: THEME.text, lineHeight: 24 },
+  resultsText: { flex: 1, fontSize: 16, fontFamily: FONT_SERIF, color: THEME.text, lineHeight: 24 },
   focusAreasWrap: { marginBottom: 24 },
   focusAreasLabel: {
     fontSize: 14,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     fontWeight: "600",
     color: THEME.textMuted,
     marginBottom: 10,
@@ -1147,10 +1146,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: "#f5f5f3",
   },
-  focusAreaText: { fontSize: 14, fontFamily: SERIF, color: THEME.text },
+  focusAreaText: { fontSize: 14, fontFamily: FONT_SERIF, color: THEME.text },
   aiValueText: {
     fontSize: 14,
-    fontFamily: SERIF,
+    fontFamily: FONT_SERIF,
     color: THEME.textMuted,
     lineHeight: 22,
     marginBottom: 24,

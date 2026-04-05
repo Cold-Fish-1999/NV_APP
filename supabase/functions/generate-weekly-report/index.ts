@@ -169,8 +169,8 @@ async function processUser(
 
   if (existing && existing.length > 0) return;
 
-  // Step 2: fetch last 4 weeks of data & normalize keywords
-  const fourWeeksAgo = format(subWeeks(targetMonday, 3), "yyyy-MM-dd");
+  // Step 2: fetch last 8 weeks of data & normalize keywords
+  const fourWeeksAgo = format(subWeeks(targetMonday, 7), "yyyy-MM-dd");
 
   const { data: allRows } = await supabaseAdmin
     .from("symptom_summaries")
@@ -221,21 +221,32 @@ async function processUser(
     if (s && s in severityBreakdown) severityBreakdown[s]++;
   }
 
-  // Build 4-week buckets for symptom trends
+  // Build 8-week buckets for symptom trends
   const weekBuckets: { monday: Date; sunday: Date; label: string; start: string; end: string }[] = [];
-  for (let i = 3; i >= 0; i--) {
+  for (let i = 7; i >= 0; i--) {
     const mon = subWeeks(targetMonday, i);
     const sun = endOfWeek(mon, { weekStartsOn: 1 });
     weekBuckets.push({
       monday: mon,
       sunday: sun,
-      label: weekLabel(mon, sun),
+      label: format(mon, "MMM d"),
       start: format(mon, "yyyy-MM-dd"),
       end: format(sun, "yyyy-MM-dd"),
     });
   }
 
-  const symptomTrends: SymptomTrend[] = topSymptoms.map(({ name }) => {
+  // Top 10 symptoms across entire 8-week window for trends
+  const trendTagFreq: Record<string, number> = {};
+  for (const r of normalizedRows) {
+    for (const t of r.tags) trendTagFreq[t] = (trendTagFreq[t] || 0) + 1;
+  }
+  const trendTop10 = Object.entries(trendTagFreq)
+    .filter(([, count]) => count >= 3)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([name]) => name);
+
+  const symptomTrends: SymptomTrend[] = trendTop10.map((name) => {
     const weeks: WeekBucket[] = weekBuckets.map((wb) => {
       const count = normalizedRows.filter(
         (r) => r.local_date >= wb.start && r.local_date <= wb.end && r.tags.includes(name),
@@ -391,7 +402,7 @@ ${summaries.map((s: { level: string; summary: string }) => `[${s.level}]: ${s.su
 ## This Week's Symptom Records (${thisWeekRows.length} entries)
 ${thisWeekRows.map((r: SymptomRow) => `[${r.local_date}] severity=${r.severity ?? "n/a"} tags=${r.tags.join(", ")} — ${r.summary}`).join("\n")}
 
-## Symptom Trends (last 4 weeks)
+## Symptom Trends (last 8 weeks)
 ${JSON.stringify(symptomTrends, null, 2)}
 
 Based on all this context, produce a JSON object with exactly these fields:

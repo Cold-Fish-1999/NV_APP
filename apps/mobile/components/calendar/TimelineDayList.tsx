@@ -6,14 +6,15 @@ import {
   ScrollView,
   Pressable,
   LayoutAnimation,
-  Platform,
   UIManager,
+  Platform,
   Alert,
   TextInput,
   Keyboard,
 } from "react-native";
 import { calendarTheme as theme, severityColors } from "@/lib/calendarTheme";
 import { formatWeekday, formatTime, toLocalDateStr } from "@/lib/dateUtils";
+import { fontSerif, FONT_SANS, FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
 import type { DayAggregated } from "@/lib/calendarService";
 import type { SymptomEntry } from "@/types/calendar";
 
@@ -185,7 +186,7 @@ function InlineEntryRow({
             </View>
           ) : (
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryText}>{entry.summary}</Text>
+              <Text style={[styles.summaryText, { fontFamily: fontSerif(entry.summary) }]}>{entry.summary}</Text>
               <Pressable
                 onPress={() => setMenuOpen((p) => !p)}
                 hitSlop={12}
@@ -441,6 +442,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     fontSize: 40,
     fontWeight: "800",
+    fontFamily: FONT_SANS_BOLD,
     color: theme.primary,
     opacity: 0.15,
     letterSpacing: -1,
@@ -460,12 +462,14 @@ const styles = StyleSheet.create({
   dateNum: {
     fontSize: 20,
     fontWeight: "700",
+    fontFamily: FONT_SANS_BOLD,
     color: theme.text,
     lineHeight: 24,
     letterSpacing: -0.3,
   },
   weekday: {
     fontSize: 12,
+    fontFamily: FONT_SANS,
     color: theme.textSecondary,
     marginTop: 1,
     letterSpacing: 0.2,
@@ -528,6 +532,7 @@ const styles = StyleSheet.create({
 
   todayHint: {
     fontSize: 14,
+    fontFamily: FONT_SANS,
     color: theme.textMuted,
     fontStyle: "italic",
   },
@@ -539,19 +544,20 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 12,
   },
-  pillText: { fontSize: 13, color: theme.pillText, maxWidth: 80 },
+  pillText: { fontSize: 13, fontFamily: FONT_SANS, color: theme.pillText, maxWidth: 80 },
   pillExtra: { backgroundColor: theme.bgSecondary },
-  pillExtraText: { fontSize: 12, color: theme.textMuted, fontWeight: "500" },
+  pillExtraText: { fontSize: 12, fontFamily: FONT_SANS_MEDIUM, color: theme.textMuted, fontWeight: "500" },
 
   chevron: {
     fontSize: 18,
+    fontFamily: FONT_SANS,
     color: theme.textMuted,
     marginLeft: 4,
     transform: [{ rotate: "0deg" }],
   },
   chevronOpen: { transform: [{ rotate: "90deg" }] },
 
-  gapText: { fontSize: 14, color: theme.textMuted, fontStyle: "italic" },
+  gapText: { fontSize: 14, fontFamily: FONT_SANS, color: theme.textMuted, fontStyle: "italic" },
 
   /* ---- Inline entry rows (expanded) ---- */
   entryOuter: {},
@@ -566,6 +572,7 @@ const styles = StyleSheet.create({
   entryTime: {
     fontSize: 14,
     fontWeight: "500",
+    fontFamily: FONT_SANS_MEDIUM,
     color: theme.textMuted,
     fontVariant: ["tabular-nums"],
     letterSpacing: -0.2,
@@ -604,6 +611,7 @@ const styles = StyleSheet.create({
   },
   ellipsis: {
     fontSize: 16,
+    fontFamily: FONT_SANS_BOLD,
     color: theme.textMuted,
     opacity: 0.4,
     fontWeight: "600",
@@ -619,7 +627,7 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   menuItem: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 6 },
-  menuText: { fontSize: 13, fontWeight: "500", color: theme.textSecondary },
+  menuText: { fontSize: 13, fontWeight: "500", fontFamily: FONT_SANS_MEDIUM, color: theme.textSecondary },
   menuTextDanger: { color: "#C0392B" },
   menuDivider: { width: 1, height: 14, backgroundColor: theme.border },
 
@@ -637,7 +645,7 @@ const styles = StyleSheet.create({
   },
   editActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 8 },
   editBtn: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 6 },
-  editBtnCancel: { fontSize: 13, fontWeight: "500", color: theme.textSecondary },
+  editBtnCancel: { fontSize: 13, fontWeight: "500", fontFamily: FONT_SANS_MEDIUM, color: theme.textSecondary },
   editBtnSave: { backgroundColor: theme.primary },
-  editBtnSaveText: { fontSize: 13, fontWeight: "600", color: "#fff" },
+  editBtnSaveText: { fontSize: 13, fontWeight: "600", fontFamily: FONT_SANS_BOLD, color: "#fff" },
 });
