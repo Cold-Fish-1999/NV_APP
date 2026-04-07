@@ -179,6 +179,59 @@ const LOG_SYMPTOM_TOOL = {
   },
 };
 
+const FETCH_HEALTH_HISTORY_TOOL = {
+  name: "fetch_health_history",
+  description:
+    "Retrieve the user's health summaries for a specific time period. " +
+    "Call this when the user asks about past symptoms, trends, patterns, or mentions " +
+    "time frames like 'last month', 'past few months', 'recently', '最近', '上个月'. " +
+    "Do NOT call this for current/today's symptoms — those are already in your context.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      period: {
+        type: "string",
+        enum: ["monthly", "quarterly", "biannual"],
+        description:
+          "Which summary period to retrieve: " +
+          "'monthly' = past month, 'quarterly' = past 3 months, 'biannual' = past 6 months. " +
+          "Choose the shortest period that covers the user's question.",
+      },
+    },
+    required: ["period"],
+  },
+};
+
+const LIST_DOCUMENTS_TOOL = {
+  name: "list_documents",
+  description:
+    "List the user's uploaded medical documents (lab reports, prescriptions, checkup results, etc.) " +
+    "with their titles and upload dates. Call this when the user mentions their medical documents, " +
+    "test results, prescriptions, checkups, '体检', '化验', '报告', '处方'. " +
+    "Returns a list of document names and dates — use fetch_document_detail to get the full content.",
+  input_schema: {
+    type: "object" as const,
+    properties: {},
+  },
+};
+
+const FETCH_DOCUMENT_DETAIL_TOOL = {
+  name: "fetch_document_detail",
+  description:
+    "Retrieve the AI-generated summary of a specific medical document by its record_id. " +
+    "Call this after list_documents to get details about a document the user is asking about.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      record_id: {
+        type: "string",
+        description: "The record_id of the document to retrieve (from list_documents results)",
+      },
+    },
+    required: ["record_id"],
+  },
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -453,7 +506,7 @@ export async function POST(request: Request) {
 
   try {
     let currentMessages = buildMessages(userContentBlocks);
-    let maxTurns = 2;
+    let maxTurns = 5;
 
     const llmStart = Date.now();
     while (maxTurns-- > 0) {
@@ -461,7 +514,7 @@ export async function POST(request: Request) {
         model: selectedModel,
         system: selectedContext,
         messages: currentMessages,
-        tools: [LOG_SYMPTOM_TOOL],
+        tools: [LOG_SYMPTOM_TOOL, FETCH_HEALTH_HISTORY_TOOL, LIST_DOCUMENTS_TOOL, FETCH_DOCUMENT_DETAIL_TOOL],
         max_tokens: selectedMaxTokens,
         ...(useLayer2 ? { temperature: 0 } : {}),
       });
@@ -487,68 +540,184 @@ export async function POST(request: Request) {
 
         const toolResults: ContentBlock[] = [];
         for (const tb of toolBlocks) {
-          if (tb.name !== "log_symptom") {
+          // ── log_symptom ──
+          if (tb.name === "log_symptom") {
+            const input = tb.input as {
+              content?: string;
+              keywords?: string[];
+              severity?: string;
+              time_of_day?: string;
+            };
+            const summary =
+              typeof input.content === "string" && input.content.trim()
+                ? input.content.trim()
+                : null;
+
+            if (summary) {
+              const rawKeywords = Array.isArray(input.keywords)
+                ? input.keywords.filter((k) => typeof k === "string" && k.trim()).map((k) => k.trim())
+                : [];
+              const keywords = rawKeywords.length > 0 ? normalizeKeywords(rawKeywords) : [];
+              const severity =
+                input.severity === "low" || input.severity === "medium" || input.severity === "high" || input.severity === "positive"
+                  ? input.severity
+                  : null;
+              const meta: Record<string, unknown> = {};
+              if (keywords.length > 0) meta.symptom_keywords = keywords;
+
+              const tod = typeof input.time_of_day === "string" ? input.time_of_day : "now";
+              let createdAt: string | undefined;
+              if (tod !== "now" && tod in TIME_OF_DAY_HOURS) {
+                const hour = TIME_OF_DAY_HOURS[tod];
+                createdAt = `${dateStr}T${String(hour).padStart(2, "0")}:00:00+08:00`;
+                if (input.time_of_day) meta.time_of_day = input.time_of_day;
+              }
+
+              const insertPayload: Record<string, unknown> = {
+                user_id: userId,
+                local_date: dateStr,
+                summary,
+                tags: keywords,
+                severity,
+                source_message_id: sourceMessageId,
+                meta,
+              };
+              if (createdAt) insertPayload.created_at = createdAt;
+
+              const { error: logErr } = await supabaseAdmin
+                .from("symptom_summaries")
+                .insert(insertPayload);
+              if (!logErr) dailyLogUpdated = true;
+              else console.error("symptom_summaries insert:", logErr);
+            }
+
             toolResults.push({
               type: "tool_result",
               tool_use_id: tb.id,
-              content: "Unknown tool.",
+              content: summary ? "已成功记录。" : "参数无效，未记录。",
             });
             continue;
           }
 
-          const input = tb.input as {
-            content?: string;
-            keywords?: string[];
-            severity?: string;
-            time_of_day?: string;
-          };
-          const summary =
-            typeof input.content === "string" && input.content.trim()
-              ? input.content.trim()
-              : null;
-
-          if (summary) {
-            const rawKeywords = Array.isArray(input.keywords)
-              ? input.keywords.filter((k) => typeof k === "string" && k.trim()).map((k) => k.trim())
-              : [];
-            const keywords = rawKeywords.length > 0 ? normalizeKeywords(rawKeywords) : [];
-            const severity =
-              input.severity === "low" || input.severity === "medium" || input.severity === "high" || input.severity === "positive"
-                ? input.severity
-                : null;
-            const meta: Record<string, unknown> = {};
-            if (keywords.length > 0) meta.symptom_keywords = keywords;
-
-            const tod = typeof input.time_of_day === "string" ? input.time_of_day : "now";
-            let createdAt: string | undefined;
-            if (tod !== "now" && tod in TIME_OF_DAY_HOURS) {
-              const hour = TIME_OF_DAY_HOURS[tod];
-              createdAt = `${dateStr}T${String(hour).padStart(2, "0")}:00:00+08:00`;
-              if (input.time_of_day) meta.time_of_day = input.time_of_day;
-            }
-
-            const insertPayload: Record<string, unknown> = {
-              user_id: userId,
-              local_date: dateStr,
-              summary,
-              tags: keywords,
-              severity,
-              source_message_id: sourceMessageId,
-              meta,
+          // ── fetch_health_history ──
+          if (tb.name === "fetch_health_history") {
+            const input = tb.input as { period?: string };
+            const period = input.period ?? "monthly";
+            const levelMap: Record<string, string> = {
+              monthly: "monthly",
+              quarterly: "quarterly",
+              biannual: "biannual",
             };
-            if (createdAt) insertPayload.created_at = createdAt;
+            const level = levelMap[period] ?? "monthly";
 
-            const { error: logErr } = await supabaseAdmin
-              .from("symptom_summaries")
-              .insert(insertPayload);
-            if (!logErr) dailyLogUpdated = true;
-            else console.error("symptom_summaries insert:", logErr);
+            const { data: sumRow } = await supabaseAdmin
+              .from("health_summaries")
+              .select("summary")
+              .eq("user_id", userId)
+              .eq("level", level)
+              .eq("is_latest", true)
+              .maybeSingle();
+
+            const content = sumRow?.summary
+              ? `[${period} health summary]\n${sumRow.summary}`
+              : `No ${period} health summary available yet.`;
+
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: tb.id,
+              content,
+            });
+            continue;
           }
 
+          // ── list_documents ──
+          if (tb.name === "list_documents") {
+            const { data: docs } = await supabaseAdmin
+              .from("profile_document_uploads")
+              .select("record_id, group_title, created_at")
+              .eq("user_id", userId)
+              .eq("status", "ready")
+              .order("created_at", { ascending: false })
+              .limit(30);
+
+            const seen = new Set<string>();
+            const entries: string[] = [];
+            for (const d of docs ?? []) {
+              const rid = d.record_id ?? (d as any).id;
+              if (seen.has(rid)) continue;
+              seen.add(rid);
+              const title = (d.group_title ?? "").trim();
+              if (!title || title === "Not a health document") continue;
+              const date = d.created_at ? d.created_at.slice(0, 10) : "unknown";
+              entries.push(`- [${date}] ${title} (record_id: ${rid})`);
+            }
+
+            const content = entries.length > 0
+              ? `User has ${entries.length} documents:\n${entries.join("\n")}`
+              : "No medical documents uploaded.";
+
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: tb.id,
+              content,
+            });
+            continue;
+          }
+
+          // ── fetch_document_detail ──
+          if (tb.name === "fetch_document_detail") {
+            const input = tb.input as { record_id?: string };
+            const recordId = input.record_id;
+
+            if (!recordId) {
+              toolResults.push({
+                type: "tool_result",
+                tool_use_id: tb.id,
+                content: "Missing record_id parameter.",
+              });
+              continue;
+            }
+
+            const { data: doc } = await supabaseAdmin
+              .from("profile_document_uploads")
+              .select("record_id, group_title, group_ai_summary, group_user_summary, ai_summary, created_at")
+              .eq("user_id", userId)
+              .eq("record_id", recordId)
+              .eq("status", "ready")
+              .limit(1)
+              .maybeSingle();
+
+            if (!doc) {
+              toolResults.push({
+                type: "tool_result",
+                tool_use_id: tb.id,
+                content: `Document with record_id "${recordId}" not found.`,
+              });
+              continue;
+            }
+
+            const title = (doc.group_title ?? "").trim();
+            const aiSummary = (doc.group_ai_summary ?? doc.ai_summary ?? "").trim();
+            const userNote = (doc.group_user_summary ?? "").trim();
+            const date = doc.created_at ? doc.created_at.slice(0, 10) : "unknown";
+
+            let content = `[Document: ${title}]\nUploaded: ${date}\n`;
+            if (userNote) content += `User note: ${userNote}\n`;
+            content += `AI Summary: ${aiSummary || "No summary available."}`;
+
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: tb.id,
+              content,
+            });
+            continue;
+          }
+
+          // ── Unknown tool ──
           toolResults.push({
             type: "tool_result",
             tool_use_id: tb.id,
-            content: summary ? "已成功记录。" : "参数无效，未记录。",
+            content: "Unknown tool.",
           });
         }
 

@@ -218,6 +218,18 @@ Guidelines:
   Example: if risk_flags contains "family history of diabetes" and the user mentions
   fatigue + frequent thirst, gently note this combination is worth monitoring.
 
+Tools for retrieving additional context (use ONLY when the user's question requires it):
+- fetch_health_history: Retrieve health summaries for a past period (monthly/quarterly/biannual).
+  Use when the user asks about trends, patterns, or past symptoms beyond this week.
+  Examples: "最近几个月怎么样", "my headaches getting worse?", "how have I been lately?"
+  Choose the shortest period that answers the question. Do NOT call this for current symptoms.
+- list_documents: List the user's uploaded medical documents (lab reports, checkups, prescriptions).
+  Use when the user mentions their medical documents, test results, or health records.
+  Examples: "我之前的体检报告", "what did my blood test show?", "check my prescription"
+- fetch_document_detail: Get the full AI summary of a specific document by record_id.
+  Use AFTER list_documents when you need to reference a specific document's content.
+  Always call list_documents first to get record_ids, then fetch_document_detail for the relevant one.
+
 ${context}
   `.trim();
 }

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -11,12 +11,73 @@ import {
   Alert,
   TextInput,
   Keyboard,
+  ActivityIndicator,
 } from "react-native";
 import { calendarTheme as theme, severityColors } from "@/lib/calendarTheme";
 import { formatWeekday, formatTime, toLocalDateStr } from "@/lib/dateUtils";
 import { fontSerif, FONT_SANS, FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
+import Svg, { Path, Circle } from "react-native-svg";
+import { fetchDayWeather, weatherCodeToLabel, type DayWeather } from "@/lib/weatherApi";
+import { useUserLocation } from "@/lib/useUserLocation";
 import type { DayAggregated } from "@/lib/calendarService";
 import type { SymptomEntry } from "@/types/calendar";
+
+function WeatherIcon({ code, size = 18, color = "#9A9A9A" }: { code: number; size?: number; color?: string }) {
+  const s = size;
+  const sw = 1.5;
+  if (code === 0) {
+    // Clear — sun
+    return (
+      <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+        <Circle cx="12" cy="12" r="4" stroke={color} strokeWidth={sw} />
+        <Path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+      </Svg>
+    );
+  }
+  if (code <= 3) {
+    // Cloudy
+    return (
+      <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+        <Path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    );
+  }
+  if (code <= 49) {
+    // Foggy
+    return (
+      <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+        <Path d="M4 14h16M4 18h12M6 10h12" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+      </Svg>
+    );
+  }
+  if (code <= 69) {
+    // Rain
+    return (
+      <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+        <Path d="M16 13V7a4 4 0 0 0-8 0v1H6a3 3 0 0 0 0 6h10a3 3 0 0 0 0-6z" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
+        <Path d="M8 19v2M12 19v2M16 19v2" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+      </Svg>
+    );
+  }
+  if (code <= 79) {
+    // Snow
+    return (
+      <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+        <Path d="M16 13V7a4 4 0 0 0-8 0v1H6a3 3 0 0 0 0 6h10a3 3 0 0 0 0-6z" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
+        <Circle cx="8" cy="20" r="1" fill={color} />
+        <Circle cx="12" cy="20" r="1" fill={color} />
+        <Circle cx="16" cy="20" r="1" fill={color} />
+      </Svg>
+    );
+  }
+  // Showers / Thunderstorm / default — cloud
+  return (
+    <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <Path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M13 16l-2 4h4l-2 4" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
 
 if (
   Platform.OS === "android" &&
@@ -30,7 +91,7 @@ const MONTH_ABBR = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-const MAX_INLINE_TAGS = 3;
+const MAX_INLINE_TAGS = 5;
 
 /* ------------------------------------------------------------------ */
 /*  Data: collapse empty days, insert month separators, protect Today */
@@ -185,15 +246,29 @@ function InlineEntryRow({
               </View>
             </View>
           ) : (
-            <View style={styles.summaryRow}>
-              <Text style={[styles.summaryText, { fontFamily: fontSerif(entry.summary) }]}>{entry.summary}</Text>
-              <Pressable
-                onPress={() => setMenuOpen((p) => !p)}
-                hitSlop={12}
-                style={styles.ellipsisBtn}
-              >
-                <Text style={styles.ellipsis}>⋯</Text>
-              </Pressable>
+            <View>
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryText, { fontFamily: fontSerif(entry.summary) }]}>{entry.summary}</Text>
+                <Pressable
+                  onPress={() => setMenuOpen((p) => !p)}
+                  hitSlop={12}
+                  style={styles.ellipsisBtn}
+                >
+                  <Text style={styles.ellipsis}>⋯</Text>
+                </Pressable>
+              </View>
+              {(entry.tags?.length ?? 0) > 0 && (
+                <View style={styles.entryTagsRow}>
+                  {entry.tags!.map((tag) => {
+                    const sc = entry.severity ? severityColors[entry.severity] : undefined;
+                    return (
+                      <View key={tag} style={[styles.pill, sc && { backgroundColor: sc.bg }]}>
+                        <Text style={[styles.pillText, sc && { color: sc.text }]} numberOfLines={1}>{tag}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -241,8 +316,24 @@ export function TimelineDayList({
   headerComponent,
 }: TimelineDayListProps) {
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
+  const [weatherCache, setWeatherCache] = useState<Record<string, DayWeather | null>>({});
+  const [weatherLoading, setWeatherLoading] = useState<string | null>(null);
+  const userCoords = useUserLocation();
+  const fetchedRef = useRef<Set<string>>(new Set());
   const todayStr = useMemo(() => toLocalDateStr(), []);
   const items = useMemo(() => buildItems(days, todayStr), [days, todayStr]);
+
+  useEffect(() => {
+    if (!expandedDate || fetchedRef.current.has(expandedDate)) return;
+    fetchedRef.current.add(expandedDate);
+    setWeatherLoading(expandedDate);
+    const dateToFetch = expandedDate;
+    fetchDayWeather(dateToFetch, userCoords).then((w) => {
+      console.log("[weather]", dateToFetch, "coords:", userCoords, "result:", w ? `${w.tempMin}-${w.tempMax}°` : "null");
+      setWeatherCache((prev) => ({ ...prev, [dateToFetch]: w }));
+      setWeatherLoading((prev) => (prev === dateToFetch ? null : prev));
+    });
+  }, [expandedDate, userCoords]);
 
   const toggle = useCallback((date: string) => {
     LayoutAnimation.configureNext(
@@ -347,7 +438,7 @@ export function TimelineDayList({
                 />
               </View>
 
-              {/* Right: tags (if has entries) or empty today hint */}
+              {/* Right: tags (if has entries, hidden when expanded) or empty today hint */}
               {hasEntries ? (
                 <Pressable
                   onPress={() => toggle(day.date)}
@@ -358,29 +449,49 @@ export function TimelineDayList({
                   ]}
                   android_ripple={{ color: theme.primaryLight }}
                 >
-                  <View style={styles.tagsRow}>
-                    {visibleTags.map(({ tag, severity }) => {
-                      const sc = severity ? severityColors[severity] : undefined;
-                      return (
-                        <View
-                          key={tag}
-                          style={[styles.pill, sc && { backgroundColor: sc.bg }]}
-                        >
-                          <Text
-                            style={[styles.pillText, sc && { color: sc.text }]}
-                            numberOfLines={1}
+                  {!isOpen ? (
+                    <View style={styles.tagsRow}>
+                      {visibleTags.map(({ tag, severity }) => {
+                        const sc = severity ? severityColors[severity] : undefined;
+                        return (
+                          <View
+                            key={tag}
+                            style={[styles.pill, sc && { backgroundColor: sc.bg }]}
                           >
-                            {tag}
-                          </Text>
+                            <Text
+                              style={[styles.pillText, sc && { color: sc.text }]}
+                              numberOfLines={1}
+                            >
+                              {tag}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                      {extraCount > 0 && (
+                        <View style={[styles.pill, styles.pillExtra]}>
+                          <Text style={styles.pillExtraText}>+{extraCount}</Text>
                         </View>
-                      );
-                    })}
-                    {extraCount > 0 && (
-                      <View style={[styles.pill, styles.pillExtra]}>
-                        <Text style={styles.pillExtraText}>+{extraCount}</Text>
-                      </View>
-                    )}
-                  </View>
+                      )}
+                    </View>
+                  ) : (
+                    <View style={styles.weatherRow}>
+                      {weatherLoading === day.date || !(day.date in weatherCache) ? (
+                        <ActivityIndicator size="small" color={theme.textMuted} />
+                      ) : weatherCache[day.date] ? (
+                        <>
+                          <WeatherIcon code={weatherCache[day.date]!.weatherCode} size={18} color="#9A9A9A" />
+                          <Text style={styles.weatherTemp}>
+                            {Math.round(weatherCache[day.date]!.tempMin)}° – {Math.round(weatherCache[day.date]!.tempMax)}°
+                          </Text>
+                          {weatherCache[day.date]!.city ? (
+                            <Text style={styles.weatherCity}>{weatherCache[day.date]!.city}</Text>
+                          ) : null}
+                        </>
+                      ) : (
+                        <Text style={styles.weatherCity}>Weather unavailable</Text>
+                      )}
+                    </View>
+                  )}
                   <Text style={[styles.chevron, isOpen && styles.chevronOpen]}>
                     ›
                   </Text>
@@ -537,16 +648,20 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
 
-  tagsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, flex: 1 },
+  tagsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, flex: 1, maxHeight: 56, overflow: "hidden" as const },
   pill: {
     backgroundColor: theme.pillBg,
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 12,
   },
-  pillText: { fontSize: 13, fontFamily: FONT_SANS, color: theme.pillText, maxWidth: 80 },
+  pillText: { fontSize: 13, fontFamily: FONT_SANS, color: theme.pillText, maxWidth: 120 },
+  weatherRow: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
+  weatherTemp: { fontSize: 13, fontFamily: FONT_SANS, color: theme.text},
+  weatherCity: { fontSize: 13, fontFamily: FONT_SANS, color: theme.textMuted },
+  entryTagsRow: { flexDirection: "row", flexWrap: "wrap", gap: 5, marginTop: 6 },
   pillExtra: { backgroundColor: theme.bgSecondary },
-  pillExtraText: { fontSize: 12, fontFamily: FONT_SANS_MEDIUM, color: theme.textMuted, fontWeight: "500" },
+  pillExtraText: { fontSize: 13, fontFamily: FONT_SANS_MEDIUM, color: theme.textMuted, fontWeight: "500" },
 
   chevron: {
     fontSize: 18,

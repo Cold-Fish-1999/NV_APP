@@ -7,7 +7,7 @@ interface TagPillsProps {
   maxShow?: number;
 }
 
-export function TagPills({ tags, maxShow = 5 }: TagPillsProps) {
+export function TagPills({ tags, maxShow = 5}: TagPillsProps) {
   const show = tags.slice(0, maxShow);
   if (show.length === 0) {
     return (
@@ -40,7 +40,7 @@ export function TagPills({ tags, maxShow = 5 }: TagPillsProps) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  wrap: { flexDirection: "row", flexWrap: "wrap", gap: 6, maxHeight: 60 },
   placeholderWrap: { opacity: 0.7 },
   placeholder: {
     fontSize: 13,
@@ -55,5 +55,5 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 14,
   },
-  text: { fontSize: 13, fontFamily: FONT_SANS, color: theme.pillText, maxWidth: 80 },
+  text: { fontSize: 13, fontFamily: FONT_SANS, color: theme.pillText, maxWidth: 120 },
 });
