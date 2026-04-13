@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import sharp from "sharp";
+import mammoth from "mammoth";
 import { supabaseAdmin } from "@/lib/supabase";
+import { extractPdfText } from "@/lib/pdfText";
 import { isPaidUser } from "@/lib/subscription";
 import {
   fetchChatContext,
@@ -174,8 +176,19 @@ const LOG_SYMPTOM_TOOL = {
           "afternoon=下午(~3pm), evening=傍晚/晚上(~8pm), night=深夜(~11pm), " +
           "now=just now or no time mentioned (uses current time)",
       },
+      category: {
+        type: "string",
+        enum: ["symptom_feeling", "diet", "medication_supplement", "behavior_treatment"],
+        description:
+          "Category of this record. Choose based on what the user described: " +
+          "'symptom_feeling' — symptoms, feelings, emotions, physical sensations (headache, fatigue, anxiety, 头痛, 失眠). " +
+          "'diet' — food/drink intake (ate pizza, drank coffee, 吃了火锅). " +
+          "'medication_supplement' — medications, supplements, vitamins taken (took ibuprofen, vitamin D, 吃了布洛芬). " +
+          "'behavior_treatment' — exercise, therapy, doctor visits, health behaviors (ran 5km, saw dentist, 做了瑜伽). " +
+          "When in doubt, default to 'symptom_feeling'.",
+      },
     },
-    required: ["content", "keywords", "severity", "time_of_day"],
+    required: ["content", "keywords", "severity", "time_of_day", "category"],
   },
 };
 
@@ -434,11 +447,66 @@ export async function POST(request: Request) {
     );
   }
 
-  // ── Build user content blocks (text + optional images) ────────
+  // ── Build user content blocks (text + optional images/files) ────
+  const DOC_EXTS = new Set(["pdf", "docx", "doc", "txt", "md"]);
   const userContentBlocks: ContentBlock[] = [{ type: "text", text }];
-  if (urls.length > 0) {
+
+  // Separate doc files from images
+  const docPaths = pathsToStore.filter((p) => {
+    const ext = p.path.split(".").pop()?.toLowerCase() ?? "";
+    return DOC_EXTS.has(ext);
+  });
+  const imgPaths = pathsToStore.filter((p) => {
+    const ext = p.path.split(".").pop()?.toLowerCase() ?? "";
+    return !DOC_EXTS.has(ext);
+  });
+
+  // Extract text from document files
+  for (const dp of docPaths) {
+    try {
+      const { data: fileData } = await supabaseAdmin.storage.from(dp.bucket).download(dp.path);
+      if (!fileData) continue;
+      const buf = Buffer.from(await fileData.arrayBuffer());
+      const ext = dp.path.split(".").pop()?.toLowerCase() ?? "";
+      let extractedText = "";
+      if (ext === "pdf") {
+        extractedText = await extractPdfText(buf);
+      } else if (ext === "docx" || ext === "doc") {
+        const result = await mammoth.extractRawText({ buffer: buf });
+        extractedText = result.value;
+      } else {
+        extractedText = buf.toString("utf-8");
+      }
+      const trimmed = extractedText.trim().slice(0, 30000);
+      if (trimmed) {
+        const fileName = dp.path.split("/").pop() ?? "file";
+        userContentBlocks.push({
+          type: "text",
+          text: `[Attached file: ${fileName}]\n${trimmed}`,
+        });
+      }
+    } catch (e) {
+      console.warn("[chat] doc extract failed:", (e as Error)?.message);
+    }
+  }
+
+  // Process image URLs (from signed URLs or image paths)
+  let imgUrls = urls.filter((u) => {
+    const hasDocPath = docPaths.some((dp) => u.includes(dp.path.split("/").pop() ?? "__none__"));
+    return !hasDocPath;
+  });
+  if (imgUrls.length === 0 && imgPaths.length > 0) {
+    const signed = await Promise.all(
+      imgPaths.map(async (p) => {
+        const { data } = await supabaseAdmin.storage.from(p.bucket).createSignedUrl(p.path, 3600);
+        return data?.signedUrl ?? "";
+      })
+    );
+    imgUrls = signed.filter(Boolean);
+  }
+  if (imgUrls.length > 0) {
     const imgResults = await Promise.all(
-      urls.map(async (url) => {
+      imgUrls.map(async (url) => {
         try {
           const b64 = await imageUrlToJpegBase64(url);
           return {
@@ -547,6 +615,7 @@ export async function POST(request: Request) {
               keywords?: string[];
               severity?: string;
               time_of_day?: string;
+              category?: string;
             };
             const summary =
               typeof input.content === "string" && input.content.trim()
@@ -554,10 +623,18 @@ export async function POST(request: Request) {
                 : null;
 
             if (summary) {
-              const rawKeywords = Array.isArray(input.keywords)
+              const validCategories = ["symptom_feeling", "diet", "medication_supplement", "behavior_treatment"];
+              const category = validCategories.includes(input.category ?? "")
+                ? input.category!
+                : "symptom_feeling";
+
+              const needsKeywords = category === "symptom_feeling" || category === "medication_supplement";
+              const rawKeywords = needsKeywords && Array.isArray(input.keywords)
                 ? input.keywords.filter((k) => typeof k === "string" && k.trim()).map((k) => k.trim())
                 : [];
-              const keywords = rawKeywords.length > 0 ? normalizeKeywords(rawKeywords) : [];
+              const keywords = rawKeywords.length > 0 && category === "symptom_feeling"
+                ? normalizeKeywords(rawKeywords)
+                : rawKeywords;
               const severity =
                 input.severity === "low" || input.severity === "medium" || input.severity === "high" || input.severity === "positive"
                   ? input.severity
@@ -579,6 +656,7 @@ export async function POST(request: Request) {
                 summary,
                 tags: keywords,
                 severity,
+                category,
                 source_message_id: sourceMessageId,
                 meta,
               };

@@ -77,21 +77,66 @@ export interface UserDocumentContext {
   updated_at: string;
 }
 
+export type DocCategory =
+  | "medical_record"
+  | "checkup_report"
+  | "tracker_app"
+  | "other";
+
+/** 列表分组顺序（仅四类；历史库里的 other_app / treatment_record 会归一后再分组） */
+export const DOC_CATEGORY_ORDER: readonly DocCategory[] = [
+  "medical_record",
+  "checkup_report",
+  "tracker_app",
+  "other",
+] as const;
+
+export const DOC_CATEGORY_LABELS: Record<DocCategory, string> = {
+  medical_record: "Medical Records & Cases",
+  checkup_report: "Checkup Reports",
+  tracker_app: "Other Health APP Data",
+  other: "Other",
+};
+
+/** 将 DB 中的历史值映射到当前四类，保证与上传选项、分组标题一致 */
+export function normalizeDocCategory(raw: string | null | undefined): DocCategory {
+  if (raw == null || raw === "") return "other";
+  switch (raw) {
+    case "medical_record":
+    case "checkup_report":
+    case "tracker_app":
+    case "other":
+      return raw;
+    case "other_app":
+      return "other";
+    case "treatment_record":
+      return "medical_record";
+    default:
+      return "other";
+  }
+}
+
+export function docCategoryLabel(raw: string | null | undefined): string {
+  return DOC_CATEGORY_LABELS[normalizeDocCategory(raw)];
+}
+
 export interface ProfileDocumentUpload {
   id: string;
   user_id: string;
   record_id: string;
-  category: "medical_record" | "treatment_record" | "other_app";
+  /** 库内可能仍为 other_app / treatment_record 等历史值；展示前请 normalizeDocCategory */
+  category: string;
   storage_bucket: string;
   storage_path: string;
   mime_type: string | null;
   ai_summary: string | null;
-  user_summary: string | null; // legacy per-image field
+  user_summary: string | null;
   group_title: string | null;
   group_ai_summary: string | null;
   group_user_summary: string | null;
   extracted_text: string | null;
   status: string;
+  report_date: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -152,6 +197,7 @@ export async function createProfileDocumentUploads(
     storage_bucket: string;
     storage_path: string;
     mime_type?: string | null;
+    report_date?: string | null;
   }>
 ): Promise<ProfileDocumentUpload[]> {
   if (payloads.length === 0) return [];
@@ -165,6 +211,7 @@ export async function createProfileDocumentUploads(
         storage_bucket: payload.storage_bucket,
         storage_path: payload.storage_path,
         mime_type: payload.mime_type ?? null,
+        report_date: payload.report_date ?? null,
         status: "processing",
       }))
     )
@@ -221,6 +268,27 @@ export async function updateProfileDocumentRecordSummary(
     return;
   }
   throw firstTry.error;
+}
+
+export async function updateProfileDocumentRecordMeta(
+  recordId: string,
+  updates: {
+    category?: DocCategory;
+    report_date?: string | null;
+    group_user_summary?: string;
+  },
+): Promise<void> {
+  const payload: Record<string, unknown> = {};
+  if (updates.category) payload.category = updates.category;
+  if (updates.report_date !== undefined) payload.report_date = updates.report_date;
+  if (updates.group_user_summary !== undefined) payload.group_user_summary = updates.group_user_summary;
+  if (Object.keys(payload).length === 0) return;
+
+  const { error } = await supabase
+    .from("profile_document_uploads")
+    .update(payload)
+    .eq("record_id", recordId);
+  if (error) throw error;
 }
 
 export async function deleteProfileDocumentRecord(

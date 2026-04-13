@@ -68,6 +68,7 @@ export function aggregateTags(
     tags?: string[] | null;
     summary?: string;
     severity?: string | null;
+    category?: string | null;
   }[],
   maxCount = 5,
 ): { tag: string; count: number; severity: string | null }[] {
@@ -83,7 +84,10 @@ export function aggregateTags(
     }
   };
 
+  const SKIP_CATEGORIES = new Set(["diet", "behavior_treatment"]);
+
   for (const e of entries) {
+    if (e.category && SKIP_CATEGORIES.has(e.category)) continue;
     let added = false;
     const sev = e.severity ?? null;
     const kw = e.meta?.symptom_keywords;

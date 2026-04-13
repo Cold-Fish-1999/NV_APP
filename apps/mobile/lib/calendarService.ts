@@ -16,7 +16,7 @@ export async function fetchSymptomSummaries(
 ): Promise<SymptomEntry[]> {
   const { data, error } = await supabase
     .from("symptom_summaries")
-    .select("id, local_date, created_at, summary, severity, meta, tags")
+    .select("id, local_date, created_at, summary, severity, meta, tags, category")
     .eq("user_id", userId)
     .gte("local_date", fromDate)
     .lte("local_date", toDate)
@@ -180,6 +180,8 @@ export async function createSymptomSummary(
   payload: {
     local_date: string;
     summary: string;
+    /** symptom_feeling | medication_supplement | diet | behavior_treatment */
+    category?: string;
     tags?: string[];
     symptom_keywords?: string[];
     severity?: string;
@@ -195,6 +197,7 @@ export async function createSymptomSummary(
     user_id: userId,
     local_date: payload.local_date,
     summary: payload.summary.trim(),
+    category: payload.category ?? "symptom_feeling",
     tags,
     meta,
     severity: payload.severity ?? "medium",
@@ -205,7 +208,7 @@ export async function createSymptomSummary(
   const { data, error } = await supabase
     .from("symptom_summaries")
     .insert(insertPayload)
-    .select("id, local_date, created_at, summary, severity, meta, tags")
+    .select("id, local_date, created_at, summary, severity, meta, tags, category")
     .single();
 
   if (error) throw error;

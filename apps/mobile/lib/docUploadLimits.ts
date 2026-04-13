@@ -1,7 +1,9 @@
 import type { ProfileDocumentUpload } from "@/lib/profileService";
 
-/** 与 migrations/018_profile_document_upload_limits.sql 保持一致 */
-export const MAX_IMAGES_PER_RECORD = 5;
+/** 与 migrations/026_profile_document_max_images.sql 保持一致（每批次仅图片时最多 6 张） */
+export const MAX_IMAGES_PER_RECORD = 6;
+/** 每批次仅文档时最多 1 个文件（与图片互斥） */
+export const MAX_DOCUMENT_FILES_PER_RECORD = 1;
 export const MAX_CONTEXTS_PER_USER = 10;
 export const MAX_UPLOADS_PER_UTC_DAY = 10;
 export const MAX_UPLOADS_PER_ROLLING_WEEK = 20;
@@ -38,7 +40,7 @@ export function countDistinctContexts(rows: ProfileDocumentUpload[]): number {
 export function mapProfileDocumentLimitError(message: string): string {
   const m = message.toLowerCase();
   if (m.includes("max_images_per_context")) {
-    return "Max 5 images per document record.";
+    return "Max 6 images per document record.";
   }
   if (m.includes("max_contexts")) {
     return "You can have at most 10 document records (contexts). Delete one to add more.";

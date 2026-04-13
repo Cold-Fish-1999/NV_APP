@@ -78,6 +78,7 @@ interface SymptomRow {
   tags: string[];
   severity: string | null;
   local_date: string;
+  category: string;
 }
 
 const SEV_MAP: Record<string, number> = { low: 1, medium: 2, high: 3 };
@@ -152,19 +153,25 @@ async function generateWeeklyReport(
     return;
   }
 
-  // Tag frequency
+  const isSymptom = (r: SymptomRow) => r.category === "symptom_feeling";
+  const isMed = (r: SymptomRow) => r.category === "medication_supplement";
+
+  const thisWeekSymptoms = thisWeekRows.filter(isSymptom);
+  const thisWeekMeds = thisWeekRows.filter(isMed);
+
+  // Tag frequency (symptom_feeling only)
   const tagFreq: Record<string, number> = {};
-  for (const r of thisWeekRows) for (const t of r.tags) tagFreq[t] = (tagFreq[t] || 0) + 1;
+  for (const r of thisWeekSymptoms) for (const t of r.tags) tagFreq[t] = (tagFreq[t] || 0) + 1;
 
   const topSymptoms = Object.entries(tagFreq)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
     .map(([name, count]) => ({ name, count }));
 
-  const distinctTypes = new Set(thisWeekRows.flatMap(r => r.tags)).size;
-  const avg = avgSev(thisWeekRows);
+  const distinctTypes = new Set(thisWeekSymptoms.flatMap(r => r.tags)).size;
+  const avg = avgSev(thisWeekSymptoms);
   const sevBreakdown = { high: 0, medium: 0, low: 0 };
-  for (const r of thisWeekRows) {
+  for (const r of thisWeekSymptoms) {
     const s = r.severity as "high" | "medium" | "low" | null;
     if (s && s in sevBreakdown) sevBreakdown[s]++;
   }
@@ -177,10 +184,13 @@ async function generateWeeklyReport(
     weekBuckets.push({ mon, start: fmt(mon), end: fmt(addDays(mon, 6)), label: `${months[mon.getMonth()]} ${mon.getDate()}` });
   }
 
-  // Top 10 symptoms across entire 8-week window for trends
-  const trendTagFreq: Record<string, number> = {};
   const eightWeeksAgo = fmt(addDays(weekMon, -7 * 7));
-  for (const r of allSymptoms.filter(r => r.local_date >= eightWeeksAgo && r.local_date <= weekEnd)) {
+  const windowSymptoms = allSymptoms.filter(r => isSymptom(r) && r.local_date >= eightWeeksAgo && r.local_date <= weekEnd);
+  const windowMeds = allSymptoms.filter(r => isMed(r) && r.local_date >= eightWeeksAgo && r.local_date <= weekEnd);
+
+  // Symptom trends (symptom_feeling only, 8-week, >=3)
+  const trendTagFreq: Record<string, number> = {};
+  for (const r of windowSymptoms) {
     for (const t of r.tags) trendTagFreq[t] = (trendTagFreq[t] || 0) + 1;
   }
   const trendTop10 = Object.entries(trendTagFreq)
@@ -195,14 +205,35 @@ async function generateWeeklyReport(
     description: "",
     weeks: weekBuckets.map(wb => ({
       label: wb.label,
-      count: allSymptoms.filter(r => r.local_date >= wb.start && r.local_date <= wb.end && r.tags.includes(name)).length,
+      count: windowSymptoms.filter(r => r.local_date >= wb.start && r.local_date <= wb.end && r.tags.includes(name)).length,
     })),
   }));
 
-  // Overall trend
+  // Medication summary + trends
+  const medTagFreq: Record<string, number> = {};
+  for (const r of thisWeekMeds) for (const t of r.tags) medTagFreq[t] = (medTagFreq[t] || 0) + 1;
+  const medicationSummary = Object.entries(medTagFreq)
+    .sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([name, count]) => ({ name, count }));
+
+  const medTrendFreq: Record<string, number> = {};
+  for (const r of windowMeds) for (const t of r.tags) medTrendFreq[t] = (medTrendFreq[t] || 0) + 1;
+  const medTrendTop = Object.entries(medTrendFreq)
+    .filter(([, count]) => count >= 3)
+    .sort((a, b) => b[1] - a[1]).slice(0, 10)
+    .map(([name]) => name);
+  const medicationTrends = medTrendTop.map(name => ({
+    name, trend: "" as string, description: "",
+    weeks: weekBuckets.map(wb => ({
+      label: wb.label,
+      count: windowMeds.filter(r => r.local_date >= wb.start && r.local_date <= wb.end && r.tags.includes(name)).length,
+    })),
+  }));
+
+  // Overall trend (symptom_feeling only)
   const prevStart = fmt(addDays(weekMon, -7));
   const prevEnd = fmt(addDays(weekMon, -1));
-  const prevRows = allSymptoms.filter(r => r.local_date >= prevStart && r.local_date <= prevEnd);
+  const prevRows = allSymptoms.filter(r => isSymptom(r) && r.local_date >= prevStart && r.local_date <= prevEnd);
   const diff = avg - avgSev(prevRows);
   const overallTrend = diff < -0.3 ? "improving" : diff > 0.3 ? "worsening" : "stable";
 
@@ -256,7 +287,7 @@ Generate JSON: {"trend_badges":[{"symptom":"...","trend":"up|same|dn","descripti
   }
 
   const reportData = {
-    total_records: thisWeekRows.length,
+    total_records: thisWeekSymptoms.length,
     distinct_types: distinctTypes,
     avg_severity: sevLabel(avg),
     overall_trend: overallTrend,
@@ -265,6 +296,8 @@ Generate JSON: {"trend_badges":[{"symptom":"...","trend":"up|same|dn","descripti
     severity_breakdown: sevBreakdown,
     things_to_watch: thingsToWatch,
     previous_weeks: previousWeeks,
+    medication_summary: medicationSummary,
+    medication_trends: medicationTrends,
   };
 
   const { error } = await supabase.from("weekly_reports").insert({
@@ -305,36 +338,40 @@ async function generateMonthlyReport(
     return;
   }
 
-  const currentRows = allSymptoms.filter(r => r.local_date >= mStartStr && r.local_date <= mEndStr);
-  if (currentRows.length === 0) {
+  const allCurrentRows = allSymptoms.filter(r => r.local_date >= mStartStr && r.local_date <= mEndStr);
+  if (allCurrentRows.length === 0) {
     console.log("    ⏭ No data this month");
     return;
   }
-  console.log(`    ${currentRows.length} records`);
+  console.log(`    ${allCurrentRows.length} records`);
 
   if (dryRun) {
     console.log("    [DRY RUN] Would generate report");
     return;
   }
 
-  // Previous months for comparison
+  const isSym = (r: SymptomRow) => r.category === "symptom_feeling";
+  const isMedCat = (r: SymptomRow) => r.category === "medication_supplement";
+
+  const currentRows = allCurrentRows.filter(isSym);
+
+  // Previous months for comparison (symptom_feeling only)
   const prevM = new Date(year, month - 1, 1);
   const twoM = new Date(year, month - 2, 1);
-  const prevRows = allSymptoms.filter(r => r.local_date >= fmt(startOfMonth(prevM)) && r.local_date <= fmt(endOfMonth(prevM)));
-  const twoMRows = allSymptoms.filter(r => r.local_date >= fmt(startOfMonth(twoM)) && r.local_date <= fmt(endOfMonth(twoM)));
+  const prevRows = allSymptoms.filter(r => isSym(r) && r.local_date >= fmt(startOfMonth(prevM)) && r.local_date <= fmt(endOfMonth(prevM)));
 
   const totalRecords = currentRows.length;
   const distinctTypes = new Set(currentRows.flatMap(r => r.tags)).size;
   const activeDays = new Set(currentRows.map(r => r.local_date)).size;
   const vsPrev = prevRows.length > 0 ? Math.round(((totalRecords - prevRows.length) / prevRows.length) * 1000) / 10 : null;
-  const vsTwo = twoMRows.length > 0 ? Math.round(((totalRecords - twoMRows.length) / twoMRows.length) * 1000) / 10 : null;
 
-  // Tag frequency across 3 months
+  // Symptom tag frequency across 3 months (symptom_feeling only)
   const threeMonthStart = fmt(startOfMonth(twoM));
-  const allThreeMonths = allSymptoms.filter(r => r.local_date >= threeMonthStart && r.local_date <= mEndStr);
+  const allThreeSymptoms = allSymptoms.filter(r => isSym(r) && r.local_date >= threeMonthStart && r.local_date <= mEndStr);
+  const allThreeMeds = allSymptoms.filter(r => isMedCat(r) && r.local_date >= threeMonthStart && r.local_date <= mEndStr);
 
   const tagFreqAll: Record<string, number> = {};
-  for (const r of allThreeMonths) for (const t of r.tags) tagFreqAll[t] = (tagFreqAll[t] || 0) + 1;
+  for (const r of allThreeSymptoms) for (const t of r.tags) tagFreqAll[t] = (tagFreqAll[t] || 0) + 1;
 
   const top5 = Object.entries(tagFreqAll).filter(([, count]) => count >= 3).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name]) => name);
 
@@ -347,18 +384,32 @@ async function generateMonthlyReport(
     cursor = addDays(cursor, 7);
   }
 
+  const MONTHS_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
   const topSymptoms = top5.map(name => ({
     name,
     count: tagFreqAll[name],
     trend: "" as string,
     description: "",
     weekly_breakdown: weekStarts.map(ws => ({
-      label: `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][ws.getMonth()]} ${ws.getDate()}`,
-      count: allThreeMonths.filter(r => r.local_date >= fmt(ws) && r.local_date <= fmt(addDays(ws, 6)) && r.tags.includes(name)).length,
+      label: `${MONTHS_ABBR[ws.getMonth()]} ${ws.getDate()}`,
+      count: allThreeSymptoms.filter(r => r.local_date >= fmt(ws) && r.local_date <= fmt(addDays(ws, 6)) && r.tags.includes(name)).length,
     })),
   }));
 
-  // Breakdown (donut) — use current month's own top tags
+  // Medication trends (3-month, >=3)
+  const medTagFreq: Record<string, number> = {};
+  for (const r of allThreeMeds) for (const t of r.tags) medTagFreq[t] = (medTagFreq[t] || 0) + 1;
+  const medTop = Object.entries(medTagFreq).filter(([, c]) => c >= 3).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([n]) => n);
+  const medicationTrends = medTop.map(name => ({
+    name, count: medTagFreq[name], trend: "" as string, description: "",
+    weekly_breakdown: weekStarts.map(ws => ({
+      label: `${MONTHS_ABBR[ws.getMonth()]} ${ws.getDate()}`,
+      count: allThreeMeds.filter(r => r.local_date >= fmt(ws) && r.local_date <= fmt(addDays(ws, 6)) && r.tags.includes(name)).length,
+    })),
+  }));
+
+  // Breakdown (donut) — symptom_feeling current month only
   const tagFreqCurrent: Record<string, number> = {};
   for (const r of currentRows) for (const t of r.tags) tagFreqCurrent[t] = (tagFreqCurrent[t] || 0) + 1;
 
@@ -412,10 +463,11 @@ Generate: {"trend_badges":[{"symptom":"...","trend":"up|same|dn","description":"
     active_days: activeDays,
     month_label: monthLabel(mStart),
     vs_prev_month_pct: vsPrev,
-    vs_two_months_pct: vsTwo,
+    vs_two_months_pct: null,
     top_symptoms: topSymptoms,
     breakdown,
     things_to_watch: thingsToWatch,
+    medication_trends: medicationTrends,
   };
 
   const { error } = await supabase.from("monthly_reports").insert({
@@ -440,7 +492,7 @@ async function main() {
   // Fetch ALL symptom data for this user
   const { data: rawSymptoms, error } = await supabase
     .from("symptom_summaries")
-    .select("summary, tags, severity, local_date")
+    .select("summary, tags, severity, local_date, category")
     .eq("user_id", userId)
     .order("local_date", { ascending: true });
 
@@ -463,6 +515,7 @@ async function main() {
     tags: [...new Set(((r.tags ?? []) as string[]).map(t => tagMap[t] ?? t))],
     severity: r.severity as string | null,
     local_date: r.local_date as string,
+    category: (r.category as string) || "symptom_feeling",
   }));
 
   console.log(`\nTotal symptom records: ${allSymptoms.length}`);

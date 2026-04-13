@@ -10,11 +10,13 @@ import {
   Alert,
   Keyboard,
   ScrollView,
+  Dimensions,
   Animated,
   LayoutAnimation,
   UIManager,
   Platform,
 } from "react-native";
+import { Picker } from "@react-native-picker/picker";
 import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -36,162 +38,62 @@ import {
 import { calendarTheme as theme } from "@/lib/calendarTheme";
 import { toLocalDateStr } from "@/lib/dateUtils";
 import { FONT_SANS, FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
+import {
+  SYMPTOM_RECORD_CATEGORY_OPTIONS,
+  symptomCategoryNeedsKeywords,
+  type SymptomRecordCategory,
+} from "@/types/calendar";
 
 const MAX_DAYS_AGO = 7;
+
 const MONTH_ABBR = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/* ------------------------------------------------------------------ */
-/*  Date & hour list builders                                          */
-/* ------------------------------------------------------------------ */
+/** Build the 7 day options: Today, Yesterday, Apr 10, … */
+interface DayOption { label: string; date: Date }
 
-interface DateItem { label: string; localDate: string }
-
-function buildDates(): DateItem[] {
-  const out: DateItem[] = [];
-  for (let off = 0; off < MAX_DAYS_AGO; off++) {
-    const d = new Date();
-    d.setDate(d.getDate() - off);
+function buildDayOptions(): DayOption[] {
+  const out: DayOption[] = [];
+  const now = new Date();
+  for (let i = 0; i < MAX_DAYS_AGO; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    d.setHours(0, 0, 0, 0);
     const label =
-      off === 0 ? "Today" : off === 1 ? "Yesterday" : `${d.getDate()} ${MONTH_ABBR[d.getMonth()]}`;
-    out.push({ label, localDate: toLocalDateStr(d) });
+      i === 0 ? "Today" : i === 1 ? "Yesterday" : `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`;
+    out.push({ label, date: d });
   }
   return out;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Compact iOS-style wheel picker                                     */
-/* ------------------------------------------------------------------ */
+/** Hour labels: "00:00" … "23:00" */
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => ({
+  value: i,
+  label: i.toString().padStart(2, "0") + ":00",
+}));
 
-const SLOT_H = 26;
-const VIS = 3;
-const WHEEL_H = SLOT_H * VIS;
-const WHEEL_PAD = SLOT_H;
-const LOOP_COPIES = 5;
-
-const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
-
-function WheelItem({ label, scrollY, idx }: { label: string; scrollY: Animated.Value; idx: number }) {
-  const center = idx * SLOT_H;
-  const dist = Animated.subtract(scrollY, center);
-  const opacity = dist.interpolate({
-    inputRange: [-SLOT_H * 1.5, -SLOT_H * 0.5, 0, SLOT_H * 0.5, SLOT_H * 1.5],
-    outputRange: [0, 0.35, 1, 0.35, 0],
-    extrapolate: "clamp",
-  });
-  const scale = dist.interpolate({
-    inputRange: [-SLOT_H * 1.5, 0, SLOT_H * 1.5],
-    outputRange: [0.82, 1, 0.82],
-    extrapolate: "clamp",
-  });
-  const rotateX = dist.interpolate({
-    inputRange: [-SLOT_H * 1.5, 0, SLOT_H * 1.5],
-    outputRange: ["55deg", "0deg", "-55deg"],
-    extrapolate: "clamp",
-  });
-
-  return (
-    <Animated.View
-      style={[whl.item, { opacity, transform: [{ perspective: 500 }, { rotateX }, { scale }] }]}
-    >
-      <Text style={whl.txt}>{label}</Text>
-    </Animated.View>
-  );
+/** Find which dayOption index matches a Date, fallback 0 (today) */
+function dayIndexFromDate(d: Date, days: DayOption[]): number {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const ds = (x: Date) => `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`;
+  const s = ds(d);
+  const idx = days.findIndex((o) => ds(o.date) === s);
+  return idx >= 0 ? idx : 0;
 }
 
-function WheelPicker({
-  items, index, onChange, loop = false,
-}: {
-  items: string[]; index: number; onChange: (i: number) => void; loop?: boolean;
-}) {
-  const n = items.length;
-  const display = useMemo(
-    () => (loop ? Array.from({ length: n * LOOP_COPIES }, (_, i) => items[i % n]) : items),
-    [items, loop, n],
-  );
-  const loopOff = loop ? n * Math.floor(LOOP_COPIES / 2) : 0;
-  const initIdx = loopOff + index;
-  const ref = useRef<ScrollView>(null);
-  const mounted = useRef(false);
-  const scrollY = useRef(new Animated.Value(initIdx * SLOT_H)).current;
-  const lastIdx = useRef(initIdx);
-
-  useEffect(() => {
-    if (!mounted.current) {
-      setTimeout(() => ref.current?.scrollTo({ y: initIdx * SLOT_H, animated: false }), 40);
-      mounted.current = true;
-    }
-  }, [initIdx]);
-
-  useEffect(() => {
-    if (mounted.current) {
-      const target = loopOff + index;
-      if (target !== lastIdx.current) {
-        lastIdx.current = target;
-        ref.current?.scrollTo({ y: target * SLOT_H, animated: true });
-      }
-    }
-  }, [index, loopOff]);
-
-  const settle = useCallback(
-    (e: any) => {
-      const raw = Math.round(e.nativeEvent.contentOffset.y / SLOT_H);
-      if (loop) {
-        const norm = ((raw % n) + n) % n;
-        const mid = n * Math.floor(LOOP_COPIES / 2) + norm;
-        if (raw < n || raw >= n * (LOOP_COPIES - 1)) {
-          lastIdx.current = mid;
-          ref.current?.scrollTo({ y: mid * SLOT_H, animated: false });
-        }
-        onChange(norm);
-      } else {
-        const c = Math.max(0, Math.min(raw, n - 1));
-        lastIdx.current = c;
-        onChange(c);
-      }
-    },
-    [n, onChange, loop],
-  );
-
-  return (
-    <View style={whl.wrap}>
-      <View style={whl.lineTop} pointerEvents="none" />
-      <View style={whl.lineBot} pointerEvents="none" />
-      <AnimatedScrollView
-        ref={ref}
-        showsVerticalScrollIndicator={false}
-        snapToInterval={SLOT_H}
-        decelerationRate="fast"
-        contentContainerStyle={{ paddingVertical: WHEEL_PAD }}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
-        scrollEventThrottle={16}
-        onMomentumScrollEnd={settle}
-        onScrollEndDrag={settle}
-        nestedScrollEnabled
-      >
-        {display.map((label, i) => (
-          <WheelItem key={i} label={label} scrollY={scrollY} idx={i} />
-        ))}
-      </AnimatedScrollView>
-    </View>
-  );
+function formatWhenChip(d: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const timeStr = `${pad(d.getHours())}:00`;
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const ds = (x: Date) => `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`;
+  if (ds(d) === ds(today)) return `Today · ${timeStr}`;
+  if (ds(d) === ds(yesterday)) return `Yesterday · ${timeStr}`;
+  return `${MONTH_ABBR[d.getMonth()]} ${d.getDate()} · ${timeStr}`;
 }
-
-const whl = StyleSheet.create({
-  wrap: { flex: 1, height: WHEEL_H, overflow: "hidden" },
-  lineTop: {
-    position: "absolute", top: WHEEL_PAD, left: 2, right: 2,
-    height: StyleSheet.hairlineWidth, backgroundColor: theme.border, zIndex: 10, opacity: 0.45,
-  },
-  lineBot: {
-    position: "absolute", top: WHEEL_PAD + SLOT_H, left: 2, right: 2,
-    height: StyleSheet.hairlineWidth, backgroundColor: theme.border, zIndex: 10, opacity: 0.45,
-  },
-  item: { height: SLOT_H, justifyContent: "center", alignItems: "center" },
-  txt: { fontSize: 13, fontFamily: FONT_SANS_MEDIUM, color: theme.text, fontWeight: "500", fontVariant: ["tabular-nums"] },
-});
 
 /* ------------------------------------------------------------------ */
 /*  Main component                                                     */
@@ -208,14 +110,20 @@ export function AddSymptomFab({ onCreated, initialDate }: AddSymptomFabProps) {
   const { session } = useAuth();
   const { status: sub } = useSubscription();
   const insets = useSafeAreaInsets();
+  const screenH = Dimensions.get("window").height;
   const tabBottom = insets.bottom > 0 ? insets.bottom - 12 : 12;
   const fabBottom = tabBottom + FLOAT_TAB_H + 16;
   const cardBottom = fabBottom + FAB_SIZE + 10;
+  const cardMaxH = screenH - cardBottom - insets.top - 12;
 
   const [expanded, setExpanded] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [dateIndex, setDateIndex] = useState(0);
-  const [hourIndex, setHourIndex] = useState(0);
+  const [when, setWhen] = useState(() => {
+    const d = new Date();
+    d.setMinutes(0, 0, 0);
+    return d;
+  });
+  const [recordCategory, setRecordCategory] = useState<SymptomRecordCategory>("symptom_feeling");
   const [content, setContent] = useState("");
   const [selectedKeywords, setSelectedKeywords] = useState<string[]>([]);
   const [inputOpen, setInputOpen] = useState(false);
@@ -233,26 +141,58 @@ export function AddSymptomFab({ onCreated, initialDate }: AddSymptomFabProps) {
   const contentInputRef = useRef<TextInput>(null);
   const cardAnim = useRef(new Animated.Value(400)).current;
 
-  const dates = useMemo(() => (expanded ? buildDates() : []), [expanded]);
-  const allHours = useMemo(() => {
-    const out: string[] = [];
-    for (let h = 0; h <= 23; h++) out.push(`${h.toString().padStart(2, "0")}:00`);
-    return out;
-  }, []);
+  const needsKeywordRow = symptomCategoryNeedsKeywords(recordCategory);
 
-  const selectedDateLabel = dates[dateIndex]?.label ?? "Today";
-  const selectedHourLabel = allHours[hourIndex] ?? `${new Date().getHours().toString().padStart(2, "0")}:00`;
+  const dayOptions = useMemo(() => buildDayOptions(), []);
+  const selectedDay = dayIndexFromDate(when, dayOptions);
+  const selectedHour = when.getHours();
 
-  const onDateChange = useCallback((i: number) => { setDateIndex(i); }, []);
+  /** Clamp hour if today: can't pick a future hour */
+  const maxHourForDay = selectedDay === 0 ? new Date().getHours() : 23;
+
+  const onDayChange = useCallback(
+    (idx: number) => {
+      setWhen((prev) => {
+        const d = new Date(dayOptions[idx].date);
+        let h = prev.getHours();
+        // clamp hour if switching to today
+        if (idx === 0) h = Math.min(h, new Date().getHours());
+        d.setHours(h, 0, 0, 0);
+        return d;
+      });
+    },
+    [dayOptions],
+  );
+
+  const onHourChange = useCallback(
+    (hour: number) => {
+      setWhen((prev) => {
+        const d = new Date(prev);
+        d.setHours(hour, 0, 0, 0);
+        return d;
+      });
+    },
+    [],
+  );
+
+  const contentPlaceholder = useMemo(() => {
+    switch (recordCategory) {
+      case "medication_supplement":
+        return "Medications or supplements (name, dose…)";
+      case "diet":
+        return "Food or drinks…";
+      case "behavior_treatment":
+        return "Activity, visit, therapy…";
+      default:
+        return "How are you feeling?";
+    }
+  }, [recordCategory]);
 
   const togglePicker = useCallback(() => {
-    LayoutAnimation.configureNext({
-      duration: 250,
-      update: { type: LayoutAnimation.Types.easeInEaseOut },
-      create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-      delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-    });
-    setPickerOpen((p) => !p);
+    LayoutAnimation.configureNext(
+      LayoutAnimation.create(280, "easeInEaseOut", "opacity"),
+    );
+    setPickerOpen((prev) => !prev);
   }, []);
 
   const toggleKeyword = useCallback((kw: string) => {
@@ -283,19 +223,23 @@ export function AddSymptomFab({ onCreated, initialDate }: AddSymptomFabProps) {
     Keyboard.dismiss();
     setPresetsLoaded(false);
     setContent("");
+    setRecordCategory("symptom_feeling");
     setSelectedKeywords([]);
     setInputOpen(false);
     setCustomInput("");
     setPickerOpen(false);
 
-    let startDateIdx = 0;
+    const now = new Date();
+    const w = new Date(now);
+    w.setMinutes(0, 0, 0);
     if (initialDate) {
-      const freshDates = buildDates();
-      const found = freshDates.findIndex((d) => d.localDate === initialDate);
-      if (found >= 0) startDateIdx = found;
+      const [y, m, d] = initialDate.split("-").map(Number);
+      if (!Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d)) {
+        w.setFullYear(y, m - 1, d);
+        w.setHours(now.getHours(), 0, 0, 0);
+      }
     }
-    setDateIndex(startDateIdx);
-    setHourIndex(new Date().getHours());
+    setWhen(w);
 
     cardAnim.setValue(400);
     setExpanded(true);
@@ -308,6 +252,7 @@ export function AddSymptomFab({ onCreated, initialDate }: AddSymptomFabProps) {
 
   const closeForm = useCallback(() => {
     Keyboard.dismiss();
+    setPickerOpen(false);
     Animated.timing(cardAnim, {
       toValue: 400, duration: 160, useNativeDriver: true,
     }).start(() => setExpanded(false));
@@ -427,40 +372,66 @@ export function AddSymptomFab({ onCreated, initialDate }: AddSymptomFabProps) {
     if (!session?.user?.id) return;
     setSubmitting(true);
     try {
-      const dateItem = dates[dateIndex] ?? dates[0];
-      if (!dateItem) return;
-      const hour = hourIndex;
+      const w = when;
+      const local_date = toLocalDateStr(w);
 
-      let kw = selectedKeywords.length > 0 ? selectedKeywords : undefined;
+      const needsKw = symptomCategoryNeedsKeywords(recordCategory);
+      let kw: string[] | undefined =
+        needsKw && selectedKeywords.length > 0 ? [...selectedKeywords] : undefined;
       let sev = "medium";
 
-      if (!kw && sub?.isPro) {
-        const auto = await generateSymptomMeta(trimmed, session.access_token);
+      if (needsKw && (!kw || kw.length === 0) && sub?.isPro) {
+        const auto = await generateSymptomMeta(trimmed, session.access_token, {
+          category:
+            recordCategory === "symptom_feeling" || recordCategory === "medication_supplement"
+              ? recordCategory
+              : undefined,
+        });
         if (auto.keywords.length > 0) kw = auto.keywords;
         sev = auto.severity;
       }
 
+      const tagsForDb = needsKw ? (kw ?? []) : [];
+      const symptomKeywordsForMeta = needsKw ? kw?.filter((k) => k.trim()) : undefined;
+
       const recordedAt = new Date(
-        `${dateItem.localDate}T${hour.toString().padStart(2, "0")}:00:00`,
+        w.getFullYear(),
+        w.getMonth(),
+        w.getDate(),
+        w.getHours(),
+        w.getMinutes(),
+        w.getSeconds(),
+        0,
       ).toISOString();
       await createSymptomSummary(session.user.id, {
-        local_date: dateItem.localDate,
+        local_date,
         summary: trimmed,
-        tags: kw && kw.length > 0 ? ["symptom", ...kw] : ["symptom"],
-        symptom_keywords: kw,
+        category: recordCategory,
+        tags: tagsForDb,
+        symptom_keywords: symptomKeywordsForMeta,
         severity: sev,
         recorded_at: recordedAt,
       });
       setExpanded(false);
       setContent("");
       setSelectedKeywords([]);
+      setRecordCategory("symptom_feeling");
       onCreated();
     } catch (e) {
       Alert.alert("Record failed", e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
     }
-  }, [session?.user?.id, session?.access_token, sub?.isPro, dates, dateIndex, hourIndex, content, selectedKeywords, onCreated]);
+  }, [
+    session?.user?.id,
+    session?.access_token,
+    sub?.isPro,
+    when,
+    content,
+    selectedKeywords,
+    recordCategory,
+    onCreated,
+  ]);
 
   const handleFabPress = useCallback(() => {
     if (!expanded) { openForm(); return; }
@@ -483,106 +454,185 @@ export function AddSymptomFab({ onCreated, initialDate }: AddSymptomFabProps) {
             <Pressable style={StyleSheet.absoluteFill} onPress={closeForm} />
           </Animated.View>
 
-          <Animated.View style={[$.cardPos, { bottom: cardBottom, transform: [{ translateY: cardAnim }] }]}>
-            <BlurView intensity={40} tint="light" style={$.card}>
+          <Animated.View style={[$.cardPos, { bottom: cardBottom, maxHeight: cardMaxH, transform: [{ translateY: cardAnim }] }]}>
+            <View style={$.card}>
+              <BlurView intensity={72} tint="light" style={StyleSheet.absoluteFill} />
               <View style={$.glassShine} pointerEvents="none" />
+              <View style={$.glassFog} pointerEvents="none" />
               <View style={$.glassEdge} pointerEvents="none" />
-              {/* ---- timestamp ---- */}
-              <TouchableOpacity style={$.meta} onPress={togglePicker} activeOpacity={0.6}>
-                <Text style={$.metaText}>{selectedDateLabel} · {selectedHourLabel}</Text>
-                <Ionicons name={pickerOpen ? "chevron-up" : "chevron-down"} size={10} color={theme.textMuted} />
-              </TouchableOpacity>
-
-              {pickerOpen && dates.length > 0 && (
-                <View style={$.wheelRow}>
-                  <WheelPicker items={dates.map((d) => d.label)} index={dateIndex} onChange={onDateChange} />
-                  <WheelPicker items={allHours} index={hourIndex} onChange={setHourIndex} loop />
-                </View>
-              )}
-
-              {/* ---- input ---- */}
-              <View style={$.inputWrap}>
-                <TextInput
-                  ref={contentInputRef}
-                  style={$.input}
-                  value={content}
-                  onChangeText={setContent}
-                  placeholder="How are you feeling?"
-                  placeholderTextColor="#C4BBAE"
-                  multiline
-                />
-                <TouchableOpacity
-                  style={$.micBtn}
-                  onPressIn={startRecording}
-                  onPressOut={stopRecordingAndTranscribe}
-                  disabled={transcribing}
-                  activeOpacity={0.6}
-                >
-                  {transcribing ? (
-                    <ActivityIndicator size="small" color={theme.textMuted} />
-                  ) : (
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={$.cardScrollContent}
+              >
+                <View style={$.topRow}>
+                  <Text style={$.cardTitle} numberOfLines={1}>
+                    Add Health Record
+                  </Text>
+                  <TouchableOpacity style={$.dateChip} onPress={togglePicker} activeOpacity={0.65}>
+                    <Text style={$.dateChipText} numberOfLines={1}>
+                      {formatWhenChip(when)}
+                    </Text>
                     <Ionicons
-                      name={recording ? "mic" : "mic-outline"}
-                      size={24}
-                      color={recording ? theme.primary : theme.textMuted}
+                      name={pickerOpen ? "chevron-up" : "chevron-down"}
+                      size={14}
+                      color={theme.textSecondary}
                     />
-                  )}
-                </TouchableOpacity>
-              </View>
+                  </TouchableOpacity>
+                </View>
 
-              {/* ---- divider ---- */}
-              <View style={$.divider} />
+                {pickerOpen ? (
+                  <View style={$.pickerRow}>
+                    <View style={$.pickerClip}>
+                      <Picker
+                        selectedValue={selectedDay}
+                        onValueChange={(v) => onDayChange(v as number)}
+                        style={$.pickerInner}
+                        itemStyle={$.pickerItemText}
+                      >
+                        {dayOptions.map((opt, i) => (
+                          <Picker.Item key={i} label={opt.label} value={i} />
+                        ))}
+                      </Picker>
+                    </View>
+                    <View style={$.pickerClip}>
+                      <Picker
+                        selectedValue={selectedHour}
+                        onValueChange={(v) => onHourChange(v as number)}
+                        style={$.pickerInner}
+                        itemStyle={$.pickerItemText}
+                      >
+                        {HOUR_OPTIONS.map((opt) => (
+                          <Picker.Item
+                            key={opt.value}
+                            label={opt.label}
+                            value={opt.value}
+                            color={opt.value > maxHourForDay ? "#ccc" : undefined}
+                            enabled={opt.value <= maxHourForDay}
+                          />
+                        ))}
+                      </Picker>
+                    </View>
+                  </View>
+                ) : null}
 
-              {/* ---- tags ---- */}
-              <View style={$.tagRow}>
-                {presetKeywords.map((kw) => {
-                  const sel = selectedKeywords.includes(kw);
-                  return (
-                    <TouchableOpacity
-                      key={kw}
-                      style={[$.chip, sel && $.chipOn]}
-                      onPress={() => toggleKeyword(kw)}
-                      onLongPress={() => removePresetKeyword(kw)}
-                      activeOpacity={0.65}
-                    >
-                      <Text style={[$.chipTxt, sel && $.chipTxtOn]}>{kw}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-                <TouchableOpacity
-                  style={[$.chipAdd, inputOpen && $.chipAddOn]}
-                  onPress={inputOpen ? undefined : openCustomInput}
-                  disabled={inputOpen}
-                  activeOpacity={0.65}
-                >
-                  <Ionicons name="add" size={13} color={inputOpen ? theme.primary : theme.textMuted} />
-                </TouchableOpacity>
-                <Animated.View style={[$.customWrap, { width: inputWidthAnim, opacity: inputOpacityAnim }]}>
+                <Text style={$.sectionLabel}>Record Type</Text>
+                <View style={$.categoryGrid}>
+                  {SYMPTOM_RECORD_CATEGORY_OPTIONS.map((opt) => {
+                    const on = recordCategory === opt.value;
+                    return (
+                      <TouchableOpacity
+                        key={opt.value}
+                        style={[$.catChip, on && $.catChipOn]}
+                        onPress={() => {
+                          setSelectedKeywords([]);
+                          setRecordCategory(opt.value);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[$.catChipTxt, on && $.catChipTxtOn]} numberOfLines={2}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* ---- input ---- */}
+                <View style={$.inputWrap}>
                   <TextInput
-                    ref={customInputRef}
-                    style={$.customInput}
-                    value={customInput}
-                    onChangeText={setCustomInput}
-                    placeholder="Add tag"
-                    placeholderTextColor={theme.textMuted}
-                    onSubmitEditing={confirmCustomInput}
-                    onBlur={handleCustomInputBlur}
-                    returnKeyType="done"
-                    blurOnSubmit
+                    ref={contentInputRef}
+                    style={$.input}
+                    value={content}
+                    onChangeText={setContent}
+                    placeholder={contentPlaceholder}
+                    placeholderTextColor="#C4BBAE"
+                    multiline
                   />
-                </Animated.View>
-                {inputOpen && (
+                  <TouchableOpacity
+                    style={$.micBtn}
+                    onPressIn={startRecording}
+                    onPressOut={stopRecordingAndTranscribe}
+                    disabled={transcribing}
+                    activeOpacity={0.6}
+                  >
+                    {transcribing ? (
+                      <ActivityIndicator size="small" color={theme.textMuted} />
+                    ) : (
+                      <Ionicons
+                        name={recording ? "mic" : "mic-outline"}
+                        size={24}
+                        color={recording ? theme.primary : theme.textMuted}
+                      />
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                {/* ---- divider ---- */}
+                <View style={$.divider} />
+
+                {/* ---- keywords (symptom & medication only) ---- */}
+                {needsKeywordRow ? (
                   <>
-                    <TouchableOpacity style={$.confirmKw} onPress={confirmCustomInput}>
-                      <Ionicons name="checkmark" size={12} color="#fff" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={$.cancelKw} onPress={closeCustomInput}>
-                      <Ionicons name="close" size={12} color={theme.textSecondary} />
-                    </TouchableOpacity>
+                    {sub?.isPro ? (
+                      <Text style={$.autoKwHint}>Prime/Pro: leave keywords empty to auto-generate.</Text>
+                    ) : null}
+                    <View style={$.tagRow}>
+                      {presetKeywords.map((kw) => {
+                        const sel = selectedKeywords.includes(kw);
+                        return (
+                          <TouchableOpacity
+                            key={kw}
+                            style={[$.chip, sel && $.chipOn]}
+                            onPress={() => toggleKeyword(kw)}
+                            onLongPress={() => removePresetKeyword(kw)}
+                            activeOpacity={0.65}
+                          >
+                            <Text style={[$.chipTxt, sel && $.chipTxtOn]}>{kw}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                      <TouchableOpacity
+                        style={[$.chipAdd, inputOpen && $.chipAddOn]}
+                        onPress={inputOpen ? undefined : openCustomInput}
+                        disabled={inputOpen}
+                        activeOpacity={0.65}
+                      >
+                        <Ionicons name="add" size={13} color={inputOpen ? theme.primary : theme.textMuted} />
+                      </TouchableOpacity>
+                      <Animated.View style={[$.customWrap, { width: inputWidthAnim, opacity: inputOpacityAnim }]}>
+                        <TextInput
+                          ref={customInputRef}
+                          style={$.customInput}
+                          value={customInput}
+                          onChangeText={setCustomInput}
+                          placeholder="Add tag"
+                          placeholderTextColor={theme.textMuted}
+                          onSubmitEditing={confirmCustomInput}
+                          onBlur={handleCustomInputBlur}
+                          returnKeyType="done"
+                          blurOnSubmit
+                        />
+                      </Animated.View>
+                      {inputOpen && (
+                        <>
+                          <TouchableOpacity style={$.confirmKw} onPress={confirmCustomInput}>
+                            <Ionicons name="checkmark" size={12} color="#fff" />
+                          </TouchableOpacity>
+                          <TouchableOpacity style={$.cancelKw} onPress={closeCustomInput}>
+                            <Ionicons name="close" size={12} color={theme.textSecondary} />
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
                   </>
+                ) : (
+                  <Text style={$.keywordSkipHint}>
+                    No keywords for this type — timeline uses your note only.
+                  </Text>
                 )}
-              </View>
-            </BlurView>
+              </ScrollView>
+            </View>
           </Animated.View>
         </>
       )}
@@ -633,64 +683,148 @@ const $ = StyleSheet.create({
     position: "absolute",
     left: 10,
     right: 10,
-    maxHeight: "72%",
     zIndex: 60,
   },
   card: {
     borderRadius: 20,
     overflow: "hidden",
-    paddingTop: 14,
-    paddingBottom: 10,
-    paddingHorizontal: 16,
-    backgroundColor: "rgba(255,255,255,0.35)",
     borderWidth: 0.5,
-    borderTopColor: "rgba(255,255,255,0.75)",
-    borderLeftColor: "rgba(255,255,255,0.5)",
-    borderRightColor: "rgba(255,255,255,0.2)",
-    borderBottomColor: "rgba(0,0,0,0.04)",
+    borderColor: "rgba(255,255,255,0.5)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 15,
     elevation: 8,
   },
+  cardScrollContent: {
+    paddingTop: 14,
+    paddingBottom: 12,
+    paddingHorizontal: 14,
+  },
   glassShine: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.52)",
+    borderRadius: 20,
+  },
+  glassFog: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.22)",
   },
   glassEdge: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 19,
-    borderWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.35)",
-    borderLeftColor: "rgba(255,255,255,0.2)",
-    borderRightColor: "rgba(255,255,255,0.08)",
-    borderBottomColor: "transparent",
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 20,
+    borderWidth: 0.5,
+    borderTopColor: "rgba(255,255,255,0.6)",
+    borderLeftColor: "rgba(255,255,255,0.3)",
+    borderRightColor: "rgba(255,255,255,0.1)",
+    borderBottomColor: "rgba(255,255,255,0.05)",
   },
 
-  /* ---- timestamp ---- */
-  meta: {
+  topRow: {
     flexDirection: "row",
     alignItems: "center",
-    alignSelf: "flex-start",
-    gap: 3,
-    marginBottom: 20,
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 8,
   },
-  metaText: {
-    fontSize: 13,
+  cardTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: "600",
+    color: theme.text,
+    fontFamily: FONT_SANS_BOLD,
+  },
+  dateChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    maxWidth: "58%",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.55)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0,0,0,0.06)",
+  },
+  dateChipText: {
+    flexShrink: 1,
+    fontSize: 12,
+    color: theme.text,
     fontFamily: FONT_SANS_MEDIUM,
-    fontWeight: "500",
-    color: theme.textMuted,
     fontVariant: ["tabular-nums"],
-    letterSpacing: 0.2,
+  },
+  pickerRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 4,
+    marginBottom: 8,
+  },
+  pickerClip: {
+    height: 105,
+    overflow: "hidden",
+  },
+  pickerInner: {
+    width: 130,
+    height: 216,
+    marginTop: -55,
+  },
+  pickerItemText: {
+    fontSize: 14,
+    fontFamily: FONT_SANS_MEDIUM,
   },
 
-  /* ---- wheels ---- */
-  wheelRow: {
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: theme.textSecondary,
+    marginBottom: 6,
+    fontFamily: FONT_SANS_MEDIUM,
+  },
+  categoryGrid: {
     flexDirection: "row",
-    height: WHEEL_H,
+    flexWrap: "wrap",
+    gap: 8,
     marginBottom: 12,
-    marginHorizontal: 80,
+    justifyContent: "space-between",
+  },
+  catChip: {
+    width: "48%",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: "rgba(0,0,0,0.05)",
+  },
+  catChipOn: {
+    backgroundColor: theme.primaryLight,
+  },
+  catChipTxt: {
+    fontSize: 11,
+    fontFamily: FONT_SANS_MEDIUM,
+    color: theme.textSecondary,
+    lineHeight: 14,
+  },
+  catChipTxtOn: {
+    color: theme.primary,
+    fontFamily: FONT_SANS_BOLD,
+  },
+  keywordSkipHint: {
+    fontSize: 12,
+    color: theme.textMuted,
+    fontFamily: FONT_SANS,
+    marginBottom: 8,
+    lineHeight: 17,
+  },
+  autoKwHint: {
+    fontSize: 11,
+    color: theme.textMuted,
+    fontFamily: FONT_SANS,
+    marginBottom: 6,
+    lineHeight: 15,
   },
 
   /* ---- input ---- */

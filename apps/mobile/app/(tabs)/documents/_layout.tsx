@@ -2,14 +2,14 @@ import { Stack } from "expo-router";
 import { SharedHeader } from "@/components/SharedHeader";
 import { SubscriptionBadge } from "@/components/SubscriptionBadge";
 
-export default function ProfileLayout() {
+export default function DocumentsLayout() {
   return (
     <Stack
       screenOptions={{
         headerShown: true,
         header: () => (
           <SharedHeader
-            title="Profile"
+            title="Documents"
             rightComponent={<SubscriptionBadge />}
             backgroundColor="#f9faf5"
           />

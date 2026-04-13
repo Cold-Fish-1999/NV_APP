@@ -20,13 +20,17 @@ function getApiBasesForDev(): string[] {
 async function fetchWithApiBaseFallback(
   path: string,
   init: RequestInit,
-  timeoutMs = 120_000
+  timeoutMs = 120_000,
+  externalSignal?: AbortSignal | null,
 ): Promise<Response> {
   const bases = getApiBasesForDev();
   let lastError: unknown;
   for (const base of bases) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    if (externalSignal) {
+      externalSignal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
     try {
       const res = await fetch(`${base}${path}`, { ...init, signal: controller.signal });
       clearTimeout(timer);
@@ -78,7 +82,8 @@ export async function sendChatMessage(
   accessToken?: string | null,
   imageUrls?: string[],
   imagePaths?: Array<{ bucket: string; path: string }>,
-  mockTier?: "free" | "prime" | "pro" | null
+  mockTier?: "free" | "prime" | "pro" | null,
+  signal?: AbortSignal | null,
 ): Promise<{ reply: string; deepAnalysis: boolean }> {
   let token = accessToken;
   if (!token) {
@@ -104,7 +109,7 @@ export async function sendChatMessage(
     method: "POST",
     headers,
     body: JSON.stringify(body),
-  });
+  }, 120_000, signal);
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -237,6 +242,7 @@ export async function analyzeProfileDocumentUploads(
 export async function generateSymptomMeta(
   description: string,
   accessToken?: string | null,
+  options?: { category?: "symptom_feeling" | "medication_supplement" },
 ): Promise<{ keywords: string[]; severity: string }> {
   let token = accessToken;
   if (!token) {
@@ -244,6 +250,11 @@ export async function generateSymptomMeta(
     token = session?.access_token ?? null;
   }
   if (!token) return { keywords: [], severity: "medium" };
+
+  const isMed = options?.category === "medication_supplement";
+  const instruction = isMed
+    ? `You are a medication log assistant. From the user's text about drugs or supplements, respond ONLY with JSON: {"keywords":["name1","name2"],"severity":"low|medium|high|positive"}. Keywords: short canonical drug/supplement names (English or user's language), max 5. Severity reflects how they feel after taking if mentioned, else "medium". No extra text.\n\nDescription: "${description.replace(/"/g, '\\"')}"`
+    : `You are a health symptom tagger. Given the user's symptom description, respond ONLY with a JSON object: {"keywords":["keyword1","keyword2"],"severity":"low|medium|high|positive"}. No extra text.\n\nDescription: "${description.replace(/"/g, '\\"')}"`;
 
   try {
     const res = await fetchWithApiBaseFallback("/api/chat", {
@@ -253,7 +264,7 @@ export async function generateSymptomMeta(
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        message: `You are a health symptom tagger. Given the user's symptom description, respond ONLY with a JSON object: {"keywords":["keyword1","keyword2"],"severity":"low|medium|high|positive"}. No extra text.\n\nDescription: "${description}"`,
+        message: instruction,
         localDate: toLocalDateStr(),
       }),
     });

@@ -9,7 +9,7 @@ import { SharedHeader } from "@/components/SharedHeader";
 import { SubscriptionBadge } from "@/components/SubscriptionBadge";
 
 export const FLOATING_TAB_H = 58;
-const FLOATING_TAB_W = 320;
+const FLOATING_TAB_W = 360;
 export const FLOATING_TAB_RADIUS = FLOATING_TAB_H / 2;
 const ICON_SIZE = 27;
 
@@ -80,6 +80,7 @@ export default function TabLayout() {
           const titles: Record<string, string> = {
             index: "Chat",
             profile: "Profile",
+            documents: "Documents",
           };
           const title = titles[route.name] ?? route.name;
           const showBadge = route.name === "index";
@@ -103,6 +104,16 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="reports"
+        options={{
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="stats-chart-outline" size={ICON_SIZE} color={color} />
+          ),
+          headerShown: false,
+          sceneStyle: { backgroundColor: theme.bg },
+        }}
+      />
+      <Tabs.Screen
         name="index"
         options={{
           tabBarIcon: ({ color }) => (
@@ -111,13 +122,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="reports"
+        name="documents"
         options={{
           tabBarIcon: ({ color }) => (
-            <Ionicons name="stats-chart-outline" size={ICON_SIZE} color={color} />
+            <Ionicons name="document-text-outline" size={ICON_SIZE} color={color} />
           ),
           headerShown: false,
-          sceneStyle: { backgroundColor: theme.bg },
+          sceneStyle: { backgroundColor: "#f9faf5" },
         }}
       />
       <Tabs.Screen

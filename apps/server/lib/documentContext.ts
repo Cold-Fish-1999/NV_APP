@@ -3,6 +3,7 @@
  * Entry points: refreshDocumentContext, incrementalRefreshDocumentContext, scheduleFullRefreshDocumentContext.
  */
 import { supabaseAdmin } from "@/lib/supabase";
+import { docCategoryLabel } from "@/lib/docCategory";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const DOC_READY_STATUSES = ["ready", "completed"] as const;
@@ -43,7 +44,7 @@ async function refreshDocumentContextWithClient(
 ): Promise<void> {
   const { data: docs } = await admin
     .from("profile_document_uploads")
-    .select("id, category, ai_summary, created_at")
+    .select("id, category, ai_summary, created_at, report_date")
     .eq("user_id", userId)
     .in("status", [...DOC_READY_STATUSES])
     .not("ai_summary", "is", null)
@@ -67,8 +68,9 @@ async function refreshDocumentContextWithClient(
 
   const docsItems = docs.map((d) => ({
     document_id: d.id as string,
-    category: d.category as string,
+    category: docCategoryLabel(d.category as string),
     summary: d.ai_summary as string,
+    report_date: (d as any).report_date as string | null,
     uploaded_at: d.created_at as string,
   }));
 
@@ -85,7 +87,7 @@ Respond ONLY with valid JSON, no preamble, no markdown:
 {"docs_summary": "...", "risk_flags": ["...", "..."]}
 
 Documents:
-${docsItems.map((d, i) => `[${i + 1}] Category: ${d.category}\n${d.summary}`).join("\n\n")}
+${docsItems.map((d, i) => `[${i + 1}] Category: ${d.category}${d.report_date ? ` | Report date: ${d.report_date}` : ""}\n${d.summary}`).join("\n\n")}
   `.trim();
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -143,7 +145,7 @@ async function incrementalRefreshDocumentContextWithClient(
   const existingItems = (existing.docs_items as DocItem[] | null) ?? [];
   const newItem: DocItem = {
     document_id: newDoc.id,
-    category: newDoc.category,
+    category: docCategoryLabel(newDoc.category),
     summary: newDoc.ai_summary,
     uploaded_at: newDoc.created_at,
   };

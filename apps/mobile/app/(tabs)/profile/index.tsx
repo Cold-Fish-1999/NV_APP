@@ -114,7 +114,6 @@ export default function ProfileScreen() {
   const { status, setTier } = useSubscription();
   const [profile, setProfile] = useState<HealthProfile | null>(null);
   const [docContext, setDocContext] = useState<UserDocumentContext | null>(null);
-  const [docCount, setDocCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingGroup, setEditingGroup] = useState<string | null>(null);
@@ -149,11 +148,6 @@ export default function ProfileScreen() {
       setHealthSummaries(hs);
       setWeeklySnapshots(ws);
 
-      const { count } = await supabase
-        .from("profile_document_uploads")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", session.user.id);
-      setDocCount(count ?? 0);
       const mergedSurvey: OnboardingSurvey = {
         ...storedSurvey,
         ...(p?.onboarding_survey ?? {}),
@@ -244,8 +238,6 @@ export default function ProfileScreen() {
   };
 
   const goLogin = () => router.replace("/login");
-
-  const goToDocuments = () => router.push("/(tabs)/profile/documents");
 
   const addTag = (key: ProfileDisplayKey) => {
     const trimmed = tagInput.trim();
@@ -517,25 +509,6 @@ export default function ProfileScreen() {
           </Pressable>
         );
       })}
-
-      <TouchableOpacity style={styles.docEntryBtn} onPress={goToDocuments} activeOpacity={0.7}>
-        <View style={styles.docEntryRow}>
-          <Ionicons name="document-text-outline" size={22} color={PROFILE_THEME.accent} />
-          <View style={styles.docEntryContent}>
-            <Text style={styles.docEntryTitle}>Documents</Text>
-            {docCount > 0 ? (
-              <Text style={styles.docEntryCount}>
-                {docCount} health {docCount === 1 ? "record" : "records"} uploaded
-              </Text>
-            ) : (
-              <Text style={styles.docEntryEmpty}>
-                No medical records yet — tap to upload
-              </Text>
-            )}
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={PROFILE_THEME.textSecondary} />
-        </View>
-      </TouchableOpacity>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Subscription (Test)</Text>
@@ -1018,41 +991,6 @@ const styles = StyleSheet.create({
   },
   textArea: { minHeight: 80, textAlignVertical: "top" as const },
   pickerRow: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
-  docEntryBtn: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: PROFILE_THEME.border,
-  },
-  docEntryRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  docEntryContent: {
-    flex: 1,
-  },
-  docEntryTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: PROFILE_THEME.text,
-    fontFamily: FONT_SANS_BOLD,
-  },
-  docEntryCount: {
-    fontSize: 12,
-    color: PROFILE_THEME.accent,
-    marginTop: 2,
-    fontFamily: FONT_SANS,
-  },
-  docEntryEmpty: {
-    fontSize: 12,
-    color: PROFILE_THEME.textSecondary,
-    marginTop: 2,
-    fontStyle: "italic",
-    fontFamily: FONT_SANS,
-  },
   actions: {
     flexDirection: "row",
     gap: 12,

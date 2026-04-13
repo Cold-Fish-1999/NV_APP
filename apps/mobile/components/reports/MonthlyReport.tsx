@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet } from "react-native";
+import { useState } from "react";
+import { View, Text, StyleSheet, Pressable } from "react-native";
 import { FONT_SANS, FONT_SANS_BOLD } from "@/lib/fonts";
 import { SymptomTrendNav } from "./SymptomTrendNav";
 import { DonutChart } from "./DonutChart";
@@ -8,6 +9,8 @@ import type { MonthlyReportRow } from "@/lib/reportService";
 interface Props {
   report: MonthlyReportRow;
 }
+
+type TabKey = "symptoms" | "medications";
 
 function deriveMonthLabels(
   breakdown: Array<{ label: string; count: number }>,
@@ -27,6 +30,8 @@ function deriveMonthLabels(
 
 export function MonthlyReport({ report }: Props) {
   const d = report.data;
+  const [tab, setTab] = useState<TabKey>("symptoms");
+  const hasMeds = (d.medication_trends?.length ?? 0) > 0;
   const monthLabels =
     d.top_symptoms.length > 0
       ? deriveMonthLabels(d.top_symptoms[0].weekly_breakdown ?? [])
@@ -34,7 +39,7 @@ export function MonthlyReport({ report }: Props) {
 
   return (
     <View style={styles.body}>
-      {/* Stats row */}
+      {/* Stats row (symptom_feeling only) */}
       <View style={styles.statsRow}>
         <StatCell value={d.total_records} label="Records" />
         <StatCell value={d.distinct_types} label="Types" />
@@ -48,30 +53,81 @@ export function MonthlyReport({ report }: Props) {
         </View>
       )}
 
-      {/* Symptom trends */}
-      {d.top_symptoms.length > 0 && (
-        <>
-          <View style={styles.divider} />
-          <Text style={styles.sectionTitle}>Symptom trends</Text>
-          <SymptomTrendNav
-            items={d.top_symptoms.map((s) => ({
-              name: s.name,
-              trend: s.trend,
-              description: s.description,
-              weekly_breakdown: s.weekly_breakdown,
-            }))}
-            monthLabels={monthLabels}
-            barHeight={100}
-          />
-        </>
+      {/* Tab switch */}
+      {hasMeds && (
+        <View style={styles.tabRow}>
+          <Pressable
+            onPress={() => setTab("symptoms")}
+            style={[styles.tabBtn, tab === "symptoms" && styles.tabBtnActive]}
+          >
+            <Text style={[styles.tabText, tab === "symptoms" && styles.tabTextActive]}>
+              Symptoms
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setTab("medications")}
+            style={[styles.tabBtn, tab === "medications" && styles.tabBtnActive]}
+          >
+            <Text style={[styles.tabText, tab === "medications" && styles.tabTextActive]}>
+              Medications
+            </Text>
+          </Pressable>
+        </View>
       )}
 
-      {/* Breakdown donut */}
-      {d.breakdown.length > 0 && (
+      {tab === "symptoms" ? (
         <>
-          <View style={styles.divider} />
-          <Text style={styles.sectionTitle}>Breakdown this month</Text>
-          <DonutChart segments={d.breakdown} total={d.total_records} />
+          {/* Symptom trends */}
+          {d.top_symptoms.length > 0 && (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.sectionTitle}>Symptom trends</Text>
+              <SymptomTrendNav
+                items={d.top_symptoms.map((s) => ({
+                  name: s.name,
+                  trend: s.trend,
+                  description: s.description,
+                  weekly_breakdown: s.weekly_breakdown,
+                }))}
+                monthLabels={monthLabels}
+                barHeight={100}
+              />
+            </>
+          )}
+
+          {/* Breakdown donut */}
+          {d.breakdown.length > 0 && (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.sectionTitle}>Breakdown this month</Text>
+              <DonutChart segments={d.breakdown} total={d.total_records} />
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Medication trends */}
+          {(d.medication_trends?.length ?? 0) > 0 ? (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.sectionTitle}>Medication trends</Text>
+              <SymptomTrendNav
+                items={(d.medication_trends ?? []).map((s) => ({
+                  name: s.name,
+                  trend: s.trend,
+                  description: s.description,
+                  weekly_breakdown: s.weekly_breakdown,
+                }))}
+                monthLabels={monthLabels}
+                barHeight={100}
+              />
+            </>
+          ) : (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.emptyHint}>No medication data for trends</Text>
+            </>
+          )}
         </>
       )}
 
@@ -151,6 +207,33 @@ const styles = StyleSheet.create({
   },
   compLabel: { fontSize: 13, color: "#6B6B6B", fontFamily: FONT_SANS },
   compPct: { fontSize: 13, fontWeight: "700", fontFamily: FONT_SANS_BOLD },
+  tabRow: {
+    flexDirection: "row",
+    gap: 0,
+    marginBottom: 4,
+    marginTop: 8,
+    backgroundColor: "#F0ECE6",
+    borderRadius: 10,
+    padding: 3,
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 6,
+    alignItems: "center",
+    borderRadius: 8,
+  },
+  tabBtnActive: {
+    backgroundColor: "#fff",
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#9A9A9A",
+    fontFamily: FONT_SANS,
+  },
+  tabTextActive: {
+    color: "#2D2D2D",
+  },
   divider: {
     height: 1,
     backgroundColor: "#F0ECE6",
@@ -162,6 +245,13 @@ const styles = StyleSheet.create({
     color: "#2D2D2D",
     marginBottom: 14,
     fontFamily: FONT_SANS_BOLD,
+  },
+  emptyHint: {
+    fontSize: 13,
+    color: "#9A9A9A",
+    fontFamily: FONT_SANS,
+    fontStyle: "italic",
+    marginTop: 14,
   },
   watchWrap: { marginTop: 8 },
 });

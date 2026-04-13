@@ -20,6 +20,7 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
+import * as DocumentPicker from "expo-document-picker";
 import { Audio } from "expo-av";
 import { BlurView } from "expo-blur";
 import Markdown from "react-native-markdown-display";
@@ -106,6 +107,7 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [transcribing, setTranscribing] = useState(false);
@@ -305,6 +307,42 @@ export default function ChatScreen() {
     }
   }, [isFree, router, pendingImages.length]);
 
+  const pickFile = useCallback(async () => {
+    if (isFree) {
+      showUpgradePrompt("chat_image", router);
+      return;
+    }
+    const maxPerChat = MAX_CHAT_IMAGES_PER_MESSAGE;
+    if (pendingImages.length >= maxPerChat) {
+      Alert.alert("Limit reached", `You can attach up to ${maxPerChat} files per message.`);
+      return;
+    }
+    const result = await DocumentPicker.getDocumentAsync({
+      type: [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+      ],
+      multiple: true,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    const remaining = maxPerChat - pendingImages.length;
+    const picked = result.assets.slice(0, remaining);
+    const next: PendingImage[] = picked.map((asset) => {
+      const name = asset.name ?? "file";
+      const ext = name.split(".").pop()?.toLowerCase() ?? "pdf";
+      return {
+        localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        uri: asset.uri,
+        base64: null,
+        mimeType: asset.mimeType ?? "application/pdf",
+        ext,
+      };
+    });
+    setPendingImages((prev) => [...prev, ...next]);
+  }, [isFree, router, pendingImages.length]);
+
   useEffect(() => {
     if (!session?.user?.id) return;
     const toUpload = pendingImages.filter((p) => !p.remotePath);
@@ -428,12 +466,15 @@ export default function ChatScreen() {
         );
       }
 
+      const controller = new AbortController();
+      abortRef.current = controller;
       const { reply, deepAnalysis } = await sendChatMessage(
         cleanText,
         session?.access_token,
         imageUrls,
         imagePaths,
-        mockTier
+        mockTier,
+        controller.signal,
       );
       if (deepThinkTimerRef.current) clearTimeout(deepThinkTimerRef.current);
       setDeepThinking(false);
@@ -448,14 +489,16 @@ export default function ChatScreen() {
     } catch (e) {
       if (deepThinkTimerRef.current) clearTimeout(deepThinkTimerRef.current);
       setDeepThinking(false);
+      const isAbort = e instanceof DOMException && e.name === "AbortError";
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantMsgId
-            ? { ...m, content: `Request failed: ${e instanceof Error ? e.message : String(e)}` }
+            ? { ...m, content: isAbort ? "Generation stopped." : `Request failed: ${e instanceof Error ? e.message : String(e)}` }
             : m
         )
       );
     } finally {
+      abortRef.current = null;
       setLoading(false);
     }
   }, [
@@ -776,17 +819,26 @@ export default function ChatScreen() {
                     color={recording ? CHAT_THEME.accent : CHAT_THEME.muted}
                   />
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.inputBoxSendBtn,
-                    ((!input.trim() && pendingImages.length === 0) || loading || uploadingImages) &&
-                      styles.inputBoxSendBtnDisabled,
-                  ]}
-                  onPress={sendMessage}
-                  disabled={(!input.trim() && pendingImages.length === 0) || loading || uploadingImages}
-                >
-                  <Text style={styles.inputBoxSendBtnText}>↑</Text>
-                </TouchableOpacity>
+                {loading ? (
+                  <TouchableOpacity
+                    style={[styles.inputBoxSendBtn, styles.inputBoxStopBtn]}
+                    onPress={() => abortRef.current?.abort()}
+                  >
+                    <View style={styles.stopIcon} />
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[
+                      styles.inputBoxSendBtn,
+                      ((!input.trim() && pendingImages.length === 0) || uploadingImages) &&
+                        styles.inputBoxSendBtnDisabled,
+                    ]}
+                    onPress={sendMessage}
+                    disabled={(!input.trim() && pendingImages.length === 0) || uploadingImages}
+                  >
+                    <Text style={styles.inputBoxSendBtnText}>↑</Text>
+                  </TouchableOpacity>
+                )}
               </>
             )}
           </View>
@@ -1017,6 +1069,8 @@ const styles = StyleSheet.create({
   },
   inputBoxSendBtnText: { color: "#fff", fontSize: 16, fontWeight: "600", fontFamily: FONT_SANS_BOLD },
   inputBoxSendBtnDisabled: { backgroundColor: CHAT_THEME.accentMuted, opacity: 0.6 },
+  inputBoxStopBtn: { backgroundColor: "#A32D2D" },
+  stopIcon: { width: 12, height: 12, borderRadius: 2, backgroundColor: "#fff" },
   inputBoxMicBtn: {
     width: 40,
     height: 40,

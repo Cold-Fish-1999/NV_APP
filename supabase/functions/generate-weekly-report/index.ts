@@ -10,6 +10,7 @@ import {
   normalizeKeywordsBatch,
   applyMapping,
 } from "../_shared/normalizeKeywords.ts";
+import { docCategoryLabel } from "../_shared/docCategory.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -28,6 +29,7 @@ interface SymptomRow {
   tags: string[];
   severity: string | null;
   local_date: string;
+  category: string;
 }
 
 interface TopSymptom {
@@ -71,6 +73,8 @@ interface ReportData {
   severity_breakdown: { high: number; medium: number; low: number };
   things_to_watch: ThingToWatch[];
   previous_weeks: PreviousWeek[];
+  medication_summary: TopSymptom[];
+  medication_trends: SymptomTrend[];
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -174,7 +178,7 @@ async function processUser(
 
   const { data: allRows } = await supabaseAdmin
     .from("symptom_summaries")
-    .select("summary, tags, severity, local_date")
+    .select("summary, tags, severity, local_date, category")
     .eq("user_id", userId)
     .gte("local_date", fourWeeksAgo)
     .lte("local_date", weekEnd)
@@ -187,8 +191,12 @@ async function processUser(
 
   const normalizedRows: SymptomRow[] = allRows.map((r) => ({
     ...r,
+    category: r.category || "symptom_feeling",
     tags: applyMapping(r.tags ?? [], mapping),
   }));
+
+  const isSymptom = (r: SymptomRow) => r.category === "symptom_feeling";
+  const isMed = (r: SymptomRow) => r.category === "medication_supplement";
 
   // Split into current week rows
   const thisWeekRows = normalizedRows.filter(
@@ -197,9 +205,14 @@ async function processUser(
 
   if (thisWeekRows.length === 0) return;
 
-  // Step 3: compute stats for this week
+  const thisWeekSymptoms = thisWeekRows.filter(isSymptom);
+  const allSymptomRows = normalizedRows.filter(isSymptom);
+  const allMedRows = normalizedRows.filter(isMed);
+  const thisWeekMeds = thisWeekRows.filter(isMed);
+
+  // Step 3: compute stats for this week (symptom_feeling only)
   const tagFreq: Record<string, number> = {};
-  for (const r of thisWeekRows) {
+  for (const r of thisWeekSymptoms) {
     for (const t of r.tags) {
       tagFreq[t] = (tagFreq[t] || 0) + 1;
     }
@@ -210,18 +223,18 @@ async function processUser(
     .slice(0, 5)
     .map(([name, count]) => ({ name, count }));
 
-  const distinctTypes = new Set(thisWeekRows.flatMap((r) => r.tags)).size;
+  const distinctTypes = new Set(thisWeekSymptoms.flatMap((r) => r.tags)).size;
 
-  const avgSev = avgSeverity(thisWeekRows);
+  const avgSev = avgSeverity(thisWeekSymptoms);
   const avgSeverityStr = severityLabel(avgSev);
 
   const severityBreakdown = { high: 0, medium: 0, low: 0 };
-  for (const r of thisWeekRows) {
+  for (const r of thisWeekSymptoms) {
     const s = r.severity as "high" | "medium" | "low" | null;
     if (s && s in severityBreakdown) severityBreakdown[s]++;
   }
 
-  // Build 8-week buckets for symptom trends
+  // Build 8-week buckets
   const weekBuckets: { monday: Date; sunday: Date; label: string; start: string; end: string }[] = [];
   for (let i = 7; i >= 0; i--) {
     const mon = subWeeks(targetMonday, i);
@@ -235,9 +248,9 @@ async function processUser(
     });
   }
 
-  // Top 10 symptoms across entire 8-week window for trends
+  // Symptom trends (symptom_feeling only, 8-week window, >=3)
   const trendTagFreq: Record<string, number> = {};
-  for (const r of normalizedRows) {
+  for (const r of allSymptomRows) {
     for (const t of r.tags) trendTagFreq[t] = (trendTagFreq[t] || 0) + 1;
   }
   const trendTop10 = Object.entries(trendTagFreq)
@@ -248,7 +261,7 @@ async function processUser(
 
   const symptomTrends: SymptomTrend[] = trendTop10.map((name) => {
     const weeks: WeekBucket[] = weekBuckets.map((wb) => {
-      const count = normalizedRows.filter(
+      const count = allSymptomRows.filter(
         (r) => r.local_date >= wb.start && r.local_date <= wb.end && r.tags.includes(name),
       ).length;
       return { label: wb.label, count };
@@ -256,10 +269,40 @@ async function processUser(
     return { name, trend: "" as "up" | "same" | "dn", description: "", weeks };
   });
 
-  // Overall trend: compare this week vs previous week avg severity
+  // Medication summary + trends (medication_supplement only)
+  const medTagFreq: Record<string, number> = {};
+  for (const r of thisWeekMeds) {
+    for (const t of r.tags) medTagFreq[t] = (medTagFreq[t] || 0) + 1;
+  }
+  const medicationSummary: TopSymptom[] = Object.entries(medTagFreq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, count]) => ({ name, count }));
+
+  const medTrendFreq: Record<string, number> = {};
+  for (const r of allMedRows) {
+    for (const t of r.tags) medTrendFreq[t] = (medTrendFreq[t] || 0) + 1;
+  }
+  const medTrendTop = Object.entries(medTrendFreq)
+    .filter(([, count]) => count >= 3)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([name]) => name);
+
+  const medicationTrends: SymptomTrend[] = medTrendTop.map((name) => {
+    const weeks: WeekBucket[] = weekBuckets.map((wb) => {
+      const count = allMedRows.filter(
+        (r) => r.local_date >= wb.start && r.local_date <= wb.end && r.tags.includes(name),
+      ).length;
+      return { label: wb.label, count };
+    });
+    return { name, trend: "" as "up" | "same" | "dn", description: "", weeks };
+  });
+
+  // Overall trend: compare this week vs previous week avg severity (symptom_feeling only)
   const prevWeekStart = format(subWeeks(targetMonday, 1), "yyyy-MM-dd");
   const prevWeekEnd = format(endOfWeek(subWeeks(targetMonday, 1), { weekStartsOn: 1 }), "yyyy-MM-dd");
-  const prevWeekRows = normalizedRows.filter(
+  const prevWeekRows = allSymptomRows.filter(
     (r) => r.local_date >= prevWeekStart && r.local_date <= prevWeekEnd,
   );
   const prevAvgSev = avgSeverity(prevWeekRows);
@@ -305,7 +348,7 @@ async function processUser(
 
   // Step 6: write to DB
   const reportData: ReportData = {
-    total_records: thisWeekRows.length,
+    total_records: thisWeekSymptoms.length,
     distinct_types: distinctTypes,
     avg_severity: avgSeverityStr,
     overall_trend: overallTrend,
@@ -314,6 +357,8 @@ async function processUser(
     severity_breakdown: severityBreakdown,
     things_to_watch: thingsToWatch,
     previous_weeks: previousWeeks,
+    medication_summary: medicationSummary,
+    medication_trends: medicationTrends,
   };
 
   await supabaseAdmin.from("weekly_reports").insert({
@@ -343,7 +388,7 @@ async function generateAiInsights(
     supabaseAdmin.from("health_profiles").select("*").eq("user_id", userId).limit(1).single(),
     supabaseAdmin
       .from("profile_document_uploads")
-      .select("record_id, group_title, group_ai_summary, group_user_summary, ai_summary, created_at")
+      .select("record_id, group_title, group_ai_summary, group_user_summary, ai_summary, created_at, report_date, category")
       .eq("user_id", userId)
       .eq("status", "ready")
       .order("created_at", { ascending: false })
@@ -374,8 +419,10 @@ async function generateAiInsights(
     const userNote = (d.group_user_summary ?? "").trim();
     if (!caption && !title) continue;
     if (title === "Not a health document") continue;
-    const uploadDate = d.created_at ? d.created_at.slice(0, 10) : "unknown";
-    let entry = `[uploaded ${uploadDate}] ${title}`;
+    const reportDate = (d as any).report_date ?? null;
+    const dateLabel = reportDate ?? (d.created_at ? d.created_at.slice(0, 10) : "unknown");
+    const cat = docCategoryLabel((d as { category?: string }).category);
+    let entry = `[${cat} | ${dateLabel}] ${title}`;
     if (userNote) entry += ` | User note: ${userNote}`;
     entry += ` — ${caption}`;
     docEntries.push(entry);

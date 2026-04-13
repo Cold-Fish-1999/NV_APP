@@ -38,6 +38,7 @@ interface SymptomSummaryRow {
   local_date: string;
   tags: string[];
   created_at: string;
+  category: string;
 }
 
 interface WeeklyBucket {
@@ -78,6 +79,7 @@ interface ReportData {
   top_symptoms: TopSymptom[];
   breakdown: { name: string; count: number }[];
   things_to_watch: ThingToWatch[];
+  medication_trends: TopSymptom[];
 }
 
 // ── Main ─────────────────────────────────────────────────────
@@ -161,7 +163,7 @@ async function processUser(userId: string, today: Date) {
   // Step 2: fetch symptom summaries for 3-month window + normalize keywords
   const { data: allRows } = await supabaseAdmin
     .from("symptom_summaries")
-    .select("id, user_id, local_date, tags, created_at")
+    .select("id, user_id, local_date, tags, created_at, category")
     .eq("user_id", userId)
     .gte("local_date", windowStart)
     .lte("local_date", monthEnd)
@@ -174,11 +176,14 @@ async function processUser(userId: string, today: Date) {
 
   const normalizedRows = allRows.map((r: SymptomSummaryRow) => ({
     ...r,
+    category: r.category || "symptom_feeling",
     tags: applyMapping(r.tags ?? [], mapping),
   }));
 
-  // Step 3: compute stats
-  const reportData = computeStats(normalizedRows, reportMonthDate, today);
+  // Step 3: compute stats (symptom_feeling only for main stats)
+  const symptomRows = normalizedRows.filter((r) => r.category === "symptom_feeling");
+  const medRows = normalizedRows.filter((r) => r.category === "medication_supplement");
+  const reportData = computeStats(symptomRows, medRows, reportMonthDate, today);
 
   if (reportData.total_records === 0) return;
 
@@ -221,7 +226,8 @@ async function processUser(userId: string, today: Date) {
 // ── Stats computation ────────────────────────────────────────
 
 function computeStats(
-  normalizedRows: SymptomSummaryRow[],
+  symptomRows: SymptomSummaryRow[],
+  medRows: SymptomSummaryRow[],
   reportMonthDate: Date,
   today: Date,
 ): Omit<ReportData, "things_to_watch"> {
@@ -238,15 +244,12 @@ function computeStats(
   const twoMonthsAgoStart = format(startOfMonth(twoMonthsAgoDate), "yyyy-MM-dd");
   const twoMonthsAgoEnd = format(endOfMonth(twoMonthsAgoDate), "yyyy-MM-dd");
 
-  // Current month rows
-  const currentRows = normalizedRows.filter(
+  // Current month rows (symptom_feeling only for main stats)
+  const currentRows = symptomRows.filter(
     (r) => r.local_date >= monthStartStr && r.local_date <= monthEndStr,
   );
-  const prevRows = normalizedRows.filter(
+  const prevRows = symptomRows.filter(
     (r) => r.local_date >= prevMonthStart && r.local_date <= prevMonthEnd,
-  );
-  const twoMonthsAgoRows = normalizedRows.filter(
-    (r) => r.local_date >= twoMonthsAgoStart && r.local_date <= twoMonthsAgoEnd,
   );
 
   const totalRecords = currentRows.length;
@@ -255,19 +258,15 @@ function computeStats(
   const activeDays = new Set(currentRows.map((r) => r.local_date)).size;
   const monthLabel = format(reportMonthDate, "MMMM yyyy");
 
-  // Percentage changes
   const prevCount = prevRows.length;
-  const twoMonthsCount = twoMonthsAgoRows.length;
   const vsPrevMonthPct = prevCount > 0
     ? Math.round(((totalRecords - prevCount) / prevCount) * 100 * 10) / 10
     : null;
-  const vsTwoMonthsPct = twoMonthsCount > 0
-    ? Math.round(((totalRecords - twoMonthsCount) / twoMonthsCount) * 100 * 10) / 10
-    : null;
+  const vsTwoMonthsPct = null;
 
-  // Tag frequency across ALL 3-month rows for top symptoms
+  // Symptom tag frequency across ALL 3-month symptom rows
   const tagFreqAll: Record<string, number> = {};
-  for (const r of normalizedRows) {
+  for (const r of symptomRows) {
     for (const t of r.tags ?? []) {
       tagFreqAll[t] = (tagFreqAll[t] || 0) + 1;
     }
@@ -289,15 +288,11 @@ function computeStats(
       const we = endOfWeek(ws, { weekStartsOn: 1 });
       const wsStr = format(ws, "yyyy-MM-dd");
       const weStr = format(we, "yyyy-MM-dd");
-      const count = normalizedRows.filter(
+      const count = symptomRows.filter(
         (r) => r.local_date >= wsStr && r.local_date <= weStr && (r.tags ?? []).includes(name),
       ).length;
       return { label: format(ws, "MMM d"), count };
     });
-
-    // Per-symptom trend: this month vs 2 months ago
-    const thisMonthCount = currentRows.filter((r) => (r.tags ?? []).includes(name)).length;
-    const twoMonthsAgoCount = twoMonthsAgoRows.filter((r) => (r.tags ?? []).includes(name)).length;
 
     return {
       name,
@@ -308,7 +303,7 @@ function computeStats(
     };
   });
 
-  // Breakdown for donut chart: current month's own top 5 + "Other"
+  // Breakdown for donut chart (symptom_feeling current month only)
   const tagFreqCurrent: Record<string, number> = {};
   for (const r of currentRows) {
     for (const t of r.tags ?? []) {
@@ -327,6 +322,30 @@ function computeStats(
     breakdown.push({ name: "Other", count: otherCount });
   }
 
+  // Medication trends (medication_supplement, 3-month window, >=3)
+  const medTagFreq: Record<string, number> = {};
+  for (const r of medRows) {
+    for (const t of r.tags ?? []) medTagFreq[t] = (medTagFreq[t] || 0) + 1;
+  }
+  const medTop = Object.entries(medTagFreq)
+    .filter(([, count]) => count >= 3)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([name]) => name);
+
+  const medicationTrends: TopSymptom[] = medTop.map((name) => {
+    const weeklyBreakdown = weekStarts.map((ws) => {
+      const we = endOfWeek(ws, { weekStartsOn: 1 });
+      const wsStr = format(ws, "yyyy-MM-dd");
+      const weStr = format(we, "yyyy-MM-dd");
+      const count = medRows.filter(
+        (r) => r.local_date >= wsStr && r.local_date <= weStr && (r.tags ?? []).includes(name),
+      ).length;
+      return { label: format(ws, "MMM d"), count };
+    });
+    return { name, count: medTagFreq[name], trend: "", description: "", weekly_breakdown: weeklyBreakdown };
+  });
+
   return {
     total_records: totalRecords,
     distinct_types: distinctTypes,
@@ -336,6 +355,7 @@ function computeStats(
     vs_two_months_pct: vsTwoMonthsPct,
     top_symptoms: topSymptoms,
     breakdown,
+    medication_trends: medicationTrends,
   };
 }
 

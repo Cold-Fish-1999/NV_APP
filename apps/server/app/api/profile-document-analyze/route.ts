@@ -1,8 +1,32 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import sharp from "sharp";
+import mammoth from "mammoth";
 import { supabaseAdmin } from "@/lib/supabase";
+import { extractPdfText } from "@/lib/pdfText";
 import { incrementalRefreshDocumentContext } from "@/lib/documentContext";
+import { normalizeDocCategory } from "@/lib/docCategory";
+
+const DOC_EXTENSIONS = new Set(["pdf", "docx", "doc", "txt", "md"]);
+function isDocFile(path: string): boolean {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return DOC_EXTENSIONS.has(ext);
+}
+
+async function extractTextFromFile(bucket: string, path: string): Promise<string> {
+  const { data, error } = await supabaseAdmin.storage.from(bucket).download(path);
+  if (error || !data) throw new Error(`Download failed: ${error?.message ?? "not found"}`);
+  const buf = Buffer.from(await data.arrayBuffer());
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf") {
+    return extractPdfText(buf);
+  }
+  if (ext === "docx" || ext === "doc") {
+    const result = await mammoth.extractRawText({ buffer: buf });
+    return result.value;
+  }
+  return buf.toString("utf-8");
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,12 +58,16 @@ function parseOutput(
 ): {
   title: string;
   combinedSummary: string;
+  detectedDate: string | null;
+  suggestedCategory: string | null;
   itemSummaries: Array<{ uploadId: string; summary: string; extractedText: string }>;
 } {
   try {
     const obj = JSON.parse(raw) as {
       title?: unknown;
       combined_summary?: unknown;
+      detected_date?: unknown;
+      suggested_category?: unknown;
       items?: unknown;
     };
     const title =
@@ -69,11 +97,19 @@ function parseOutput(
       summary: itemMap.get(id)?.summary ?? "未能从该图片提取到足够信息。",
       extractedText: itemMap.get(id)?.extractedText ?? "",
     }));
-    return { title, combinedSummary, itemSummaries };
+    const detectedDate = typeof obj.detected_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(obj.detected_date)
+      ? obj.detected_date : null;
+    const validCats = new Set(["medical_record", "checkup_report", "tracker_app", "other"]);
+    const suggestedCategory = typeof obj.suggested_category === "string" && validCats.has(obj.suggested_category)
+      ? obj.suggested_category : null;
+
+    return { title, combinedSummary, detectedDate, suggestedCategory, itemSummaries };
   } catch {
     return {
       title: "Medical Document",
       combinedSummary: "Could not extract sufficient information from the uploaded images.",
+      detectedDate: null,
+      suggestedCategory: null,
       itemSummaries: uploadIds.map((id) => ({
         uploadId: id,
         summary: "Could not extract sufficient information.",
@@ -130,7 +166,7 @@ export async function POST(request: Request) {
 
   const rowsResult = await supabaseAdmin
     .from("profile_document_uploads")
-    .select("id, user_id, record_id, category, storage_bucket, storage_path")
+    .select("id, user_id, record_id, category, storage_bucket, storage_path, report_date")
     .in("id", uploadIds);
   let rows = rowsResult.data as Array<{
     id: string;
@@ -139,6 +175,7 @@ export async function POST(request: Request) {
     category: string;
     storage_bucket: string;
     storage_path: string;
+    report_date: string | null;
   }> | null;
   if (rowsResult.error) {
     if (String(rowsResult.error.code) === "42703") {
@@ -231,41 +268,67 @@ export async function POST(request: Request) {
   const model = getProfileDocModel();
 
   try {
-    const jpegUrls = await Promise.all(
-      signedUrlResults.map(async (x) => {
+    const hasDocFiles = orderedRows.some((r) => isDocFile(r.storage_path));
+    const hasImageFiles = orderedRows.some((r) => !isDocFile(r.storage_path));
+
+    const docTexts: { row: typeof orderedRows[0]; text: string }[] = [];
+    const imageEntries: { row: typeof orderedRows[0]; jpegDataUrl: string }[] = [];
+
+    if (hasDocFiles) {
+      for (const r of orderedRows.filter((r) => isDocFile(r.storage_path))) {
+        const text = await extractTextFromFile(r.storage_bucket, r.storage_path);
+        const trimmed = text.trim().slice(0, 50000);
+        docTexts.push({ row: r, text: trimmed });
+      }
+      lap(`text-extract (${docTexts.length} files)`);
+    }
+
+    if (hasImageFiles) {
+      const imgRows = orderedRows.filter((r) => !isDocFile(r.storage_path));
+      const signedForImages = signedUrlResults.filter(
+        (x: { row: typeof orderedRows[0] }) => !isDocFile(x.row.storage_path),
+      );
+      for (const x of signedForImages) {
         const dataUrl = await imageUrlToJpegDataUrl(x.signedUrl);
-        return { ...x, jpegDataUrl: dataUrl };
-      })
-    );
-    lap(`image-download+resize (${jpegUrls.length} images)`);
+        imageEntries.push({ row: x.row, jpegDataUrl: dataUrl });
+      }
+      lap(`image-download+resize (${imageEntries.length} images)`);
+    }
+
+    const systemContent =
+      "You are a medical document extraction assistant for a personal health profile. " +
+      "CRITICAL RULE: If ALL content is unrelated to health, return: {title: \"Not a health document\", combined_summary: \"This doesn't appear to be a health-related document.\", items: [{upload_id: \"...\", summary: \"Not health-related\", extracted_text: \"\"}]}. " +
+      "For health-related content, output strict JSON: " +
+      "{title: string, combined_summary: string, detected_date: string|null, suggested_category: string|null, items: [{upload_id: string, summary: string, extracted_text: string}]}. " +
+      "detected_date: If the document contains a date (exam date, report date, lab collection date, prescription date), extract it as YYYY-MM-DD. Return null if no date found. " +
+      "suggested_category: Suggest the best category from: 'medical_record', 'checkup_report', 'tracker_app', 'other'. Return null if user already chose a specific category. " +
+      "title: concise (5-15 words) including date if available. " +
+      "combined_summary: 80-200 words; start with document date if found; incorporate user notes. " +
+      "items: one per file/image, summary 50-120 words; extracted_text: key text, max 1200 chars.";
+
+    const userContent: Array<Record<string, unknown>> = [];
+    const introText = userRemark
+      ? `User provided notes: "${userRemark}"\n\nAnalyze the following ${orderedRows.length} file(s) and provide a unified summary.`
+      : `Analyze the following ${orderedRows.length} file(s) and provide a unified summary.`;
+    userContent.push({ type: "text", text: introText });
+
+    for (const dt of docTexts) {
+      userContent.push({
+        type: "text",
+        text: `--- File: ${dt.row.storage_path.split("/").pop()} (upload_id=${dt.row.id}) ---\n${dt.text}`,
+      });
+    }
+    for (const ie of imageEntries) {
+      userContent.push({ type: "text", text: `Image upload_id=${ie.row.id}` });
+      userContent.push({ type: "image_url", image_url: { url: ie.jpegDataUrl } });
+    }
 
     const completion = await openai.chat.completions.create({
       model,
       response_format: { type: "json_object" },
       messages: [
-        {
-          role: "system",
-          content:
-            "You are a medical document extraction assistant for a personal health profile. CRITICAL RULE: If ALL uploaded images are unrelated to health (e.g. landscape photos, selfies, memes, screenshots of non-health apps, food photos, random images), you MUST return: {title: \"Not a health document\", combined_summary: \"This doesn't appear to be a health-related document. Please upload medical records, lab results, prescriptions, or health app screenshots.\", items: [{upload_id: \"...\", summary: \"Not health-related\", extracted_text: \"\"}]}. Do NOT describe, analyze, or comment on non-health images. For health-related images, output strict JSON: {title: string, combined_summary: string, items: [{upload_id: string, summary: string, extracted_text: string}]}. IMPORTANT: If the document contains a date (exam date, report date, prescription date, lab collection date), you MUST include it prominently at the beginning of the summary, e.g. 'Dated March 15, 2026 — Blood test showing...'. title: concise (5-15 words) including date if available, e.g. 'Mar 2026 Blood Test — Elevated CRP'. combined_summary: 80-200 words unified summary; start with the document date if found; incorporate user notes if provided. items: one per image, summary 50-120 words — begin with date if visible; extracted_text: key original text, max 1200 chars.",
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: userRemark
-                ? `用户提供了以下背景备注，请结合备注与图片内容进行分析：\n\n【用户备注】\n${userRemark}\n\n请分析以下 ${jpegUrls.length} 张资料图片，结合用户备注进行统一总结与逐图总结。`
-                : `请分析以下 ${jpegUrls.length} 张资料图片，并返回统一总结与逐图总结。`,
-            },
-            ...jpegUrls.flatMap((x, idx) => ([
-              {
-                type: "text",
-                text: `图片${idx + 1} upload_id=${x.row.id} category=${x.row.category}`,
-              },
-              { type: "image_url", image_url: { url: x.jpegDataUrl } },
-            ])),
-          ] as never,
-        },
+        { role: "system", content: systemContent },
+        { role: "user", content: userContent as never },
       ],
     });
 
@@ -283,6 +346,12 @@ export async function POST(request: Request) {
       if (recordId) {
         updatePayload.group_ai_summary = parsed.combinedSummary;
         updatePayload.group_title = parsed.title;
+      }
+      if (parsed.detectedDate && !row.report_date) {
+        updatePayload.report_date = parsed.detectedDate;
+      }
+      if (parsed.suggestedCategory && normalizeDocCategory(row.category) === "other") {
+        updatePayload.category = parsed.suggestedCategory;
       }
       let updateRes = await supabaseAdmin
         .from("profile_document_uploads")

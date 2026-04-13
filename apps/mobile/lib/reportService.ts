@@ -27,6 +27,13 @@ export interface WeeklyReportData {
     record_count: number;
     trend: "improving" | "stable" | "worsening";
   }>;
+  medication_summary?: Array<{ name: string; count: number }>;
+  medication_trends?: Array<{
+    name: string;
+    trend: "up" | "same" | "dn";
+    description: string;
+    weeks: Array<{ label: string; count: number }>;
+  }>;
 }
 
 export interface WeeklyReportRow {
@@ -57,6 +64,13 @@ export interface MonthlyReportData {
     risk: "high" | "medium" | "low";
     cause: string;
     tip?: string;
+  }>;
+  medication_trends?: Array<{
+    name: string;
+    count: number;
+    trend: "up" | "same" | "dn";
+    description: string;
+    weekly_breakdown: Array<{ label: string; count: number }>;
   }>;
 }
 

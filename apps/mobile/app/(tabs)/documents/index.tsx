@@ -28,7 +28,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 import { useHeaderHeight } from "@/components/SharedHeader";
-import { fontSerif, FONT_SANS,FONT_SANS_SEMIBOLD, FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
+import { fontSerif, FONT_SANS, FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
 import { useAuth } from "@/contexts/auth";
 import { useSubscription } from "@/contexts/subscription";
 import { showUpgradePrompt } from "@/lib/showUpgradePrompt";
@@ -557,6 +557,7 @@ export default function ProfileDocumentsScreen() {
     const items = documents.filter((d) => (d.record_id || d.id) === recordId);
     const uploadIds = items.map((d) => d.id);
     if (uploadIds.length === 0) return;
+    // Reset status to processing
     for (const uid of uploadIds) {
       await supabase
         .from("profile_document_uploads")
@@ -1462,10 +1463,10 @@ const styles = StyleSheet.create({
   },
   uploadCardTitle: {
     flex: 1,
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "600",
     color: DOC_THEME.text,
-    fontFamily: FONT_SANS_SEMIBOLD,
+    fontFamily: FONT_SANS_BOLD,
   },
   uploadDateChip: {
     flexDirection: "row",
@@ -1588,7 +1589,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   addTileLabel: {
-    fontSize: 10,
+    fontSize: 12,
     color: DOC_THEME.textSecondary,
     fontFamily: FONT_SANS,
   },
