@@ -16,7 +16,12 @@ interface DayDetailViewProps {
   date: string;
   entries: SymptomEntry[];
   aggregatedTags: { tag: string; count: number }[];
-  onUpdateEntry: (entryId: string, nextSummary: string) => Promise<void>;
+  onUpdateEntry: (
+    entryId: string,
+    nextSummary: string,
+    keywords?: string[] | null,
+    severity?: string,
+  ) => Promise<void>;
   onDeleteEntry: (entryId: string) => Promise<void>;
   inline?: boolean;
 }

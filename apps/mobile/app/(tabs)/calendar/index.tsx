@@ -76,14 +76,32 @@ export default function CalendarScreen() {
   );
 
   const handleUpdateEntry = useCallback(
-    async (entryId: string, nextSummary: string) => {
-      await updateSymptomSummary(entryId, nextSummary);
+    async (
+      entryId: string,
+      nextSummary: string,
+      keywords?: string[] | null,
+      severity?: string,
+    ) => {
+      const row = await updateSymptomSummary(entryId, {
+        summary: nextSummary,
+        keywords: keywords === undefined ? undefined : keywords ?? [],
+        ...(severity !== undefined ? { severity } : {}),
+      });
       setDays((prev) =>
         prev.map((d) => {
           const match = d.entries.find((e) => e.id === entryId);
           if (!match) return d;
           const nextEntries = d.entries.map((e) =>
-            e.id === entryId ? { ...e, summary: nextSummary } : e,
+            e.id === entryId
+              ? {
+                  ...e,
+                  summary: row.summary,
+                  tags: row.tags ?? e.tags,
+                  meta: row.meta ?? e.meta,
+                  severity: row.severity ?? e.severity,
+                  category: row.category ?? e.category,
+                }
+              : e,
           );
           return {
             ...d,

@@ -43,6 +43,16 @@ import {
   symptomCategoryNeedsKeywords,
   type SymptomRecordCategory,
 } from "@/types/calendar";
+import { keyboardLiftForCard } from "@/lib/keyboardCardLift";
+import {
+  computeFabBottom,
+  computeCardBottomAboveFab,
+  computeFabCardMaxHeight,
+  FAB_SIZE_PX,
+  FAB_FROM_RIGHT_PX,
+  CARD_FROM_LEFT_PX,
+  CARD_FROM_RIGHT_PX,
+} from "@/lib/fabCardLayout";
 
 const MAX_DAYS_AGO = 7;
 
@@ -104,17 +114,41 @@ interface AddSymptomFabProps {
   initialDate?: string;
 }
 
-const FLOAT_TAB_H = 52;
-
 export function AddSymptomFab({ onCreated, initialDate }: AddSymptomFabProps) {
   const { session } = useAuth();
   const { status: sub } = useSubscription();
   const insets = useSafeAreaInsets();
   const screenH = Dimensions.get("window").height;
-  const tabBottom = insets.bottom > 0 ? insets.bottom - 12 : 12;
-  const fabBottom = tabBottom + FLOAT_TAB_H + 16;
-  const cardBottom = fabBottom + FAB_SIZE + 10;
-  const cardMaxH = screenH - cardBottom - insets.top - 12;
+  const kbAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (e) => {
+        const lift = keyboardLiftForCard(e.endCoordinates.height, insets.bottom);
+        Animated.timing(kbAnim, {
+          toValue: -lift,
+          duration: e.duration ?? 250,
+          useNativeDriver: true,
+        }).start();
+      },
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      (e) => {
+        Animated.timing(kbAnim, {
+          toValue: 0,
+          duration: e.duration ?? 250,
+          useNativeDriver: true,
+        }).start();
+      },
+    );
+    return () => { show.remove(); hide.remove(); };
+  }, [insets.bottom, kbAnim]);
+
+  const fabBottom = computeFabBottom(insets.bottom);
+  const cardBottom = computeCardBottomAboveFab(fabBottom);
+  const cardMaxH = computeFabCardMaxHeight(fabBottom, insets.top, screenH);
 
   const [expanded, setExpanded] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -454,7 +488,7 @@ export function AddSymptomFab({ onCreated, initialDate }: AddSymptomFabProps) {
             <Pressable style={StyleSheet.absoluteFill} onPress={closeForm} />
           </Animated.View>
 
-          <Animated.View style={[$.cardPos, { bottom: cardBottom, maxHeight: cardMaxH, transform: [{ translateY: cardAnim }] }]}>
+          <Animated.View style={[$.cardPos, { bottom: cardBottom, maxHeight: cardMaxH, transform: [{ translateY: cardAnim }, { translateY: kbAnim }] }]}>
             <View style={$.card}>
               <BlurView intensity={72} tint="light" style={StyleSheet.absoluteFill} />
               <View style={$.glassShine} pointerEvents="none" />
@@ -653,15 +687,13 @@ export function AddSymptomFab({ onCreated, initialDate }: AddSymptomFabProps) {
 /*  Styles                                                             */
 /* ------------------------------------------------------------------ */
 
-const FAB_SIZE = 52;
-
 const $ = StyleSheet.create({
   fab: {
     position: "absolute",
-    right: 20,
-    width: FAB_SIZE,
-    height: FAB_SIZE,
-    borderRadius: FAB_SIZE / 2,
+    right: FAB_FROM_RIGHT_PX,
+    width: FAB_SIZE_PX,
+    height: FAB_SIZE_PX,
+    borderRadius: FAB_SIZE_PX / 2,
     backgroundColor: theme.primary,
     alignItems: "center",
     justifyContent: "center",
@@ -681,8 +713,8 @@ const $ = StyleSheet.create({
 
   cardPos: {
     position: "absolute",
-    left: 10,
-    right: 10,
+    left: CARD_FROM_LEFT_PX,
+    right: CARD_FROM_RIGHT_PX,
     zIndex: 60,
   },
   card: {

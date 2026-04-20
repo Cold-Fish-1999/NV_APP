@@ -12,6 +12,9 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  LayoutAnimation,
+  UIManager,
+  Animated,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -39,6 +42,22 @@ import {
 } from "@/lib/profileService";
 import { getOnboardingSurvey } from "@/app/onboarding";
 import type { OnboardingSurvey } from "@/lib/onboardingInsight";
+
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+/** 长按进入/退出编辑时，卡片高度与内容切换 */
+const PROFILE_CARD_LAYOUT_ANIM = {
+  duration: 300,
+  create: { type: "easeInEaseOut" as const, property: "opacity" as const },
+  update: { type: "easeInEaseOut" as const },
+  delete: { type: "easeInEaseOut" as const, property: "opacity" as const },
+};
+
+function runProfileCardLayoutAnim() {
+  LayoutAnimation.configureNext(PROFILE_CARD_LAYOUT_ANIM);
+}
 
 const PROFILE_FIELD_LABELS: Record<ProfileDisplayKey, string> = {
   age_range: "Age",
@@ -131,6 +150,26 @@ export default function ProfileScreen() {
   /** 避免 useFocusEffect 依赖 profile 导致：拉取完成 → profile 引用变 → effect 重跑 → 无限「下拉刷新」 */
   const skipFocusSilentRefreshRef = useRef(true);
 
+  const cardEditBorderRef = useRef<Record<string, Animated.Value>>({});
+  const getCardBorderAnim = useCallback((key: string) => {
+    if (!cardEditBorderRef.current[key]) {
+      cardEditBorderRef.current[key] = new Animated.Value(0);
+    }
+    return cardEditBorderRef.current[key];
+  }, []);
+
+  useEffect(() => {
+    for (const g of PROFILE_GROUPS) {
+      const anim = getCardBorderAnim(g.key);
+      Animated.spring(anim, {
+        toValue: editingGroup === g.key ? 1 : 0,
+        useNativeDriver: false,
+        friction: 9,
+        tension: 64,
+      }).start();
+    }
+  }, [editingGroup, getCardBorderAnim]);
+
   const loadProfile = useCallback(async (silent = false) => {
     if (!session?.user?.id) return;
     if (!silent) setLoading(true);
@@ -222,6 +261,7 @@ export default function ProfileScreen() {
         gender: form.gender?.trim() || null,
         family_history: form.family_history?.trim() || null,
       });
+      runProfileCardLayoutAnim();
       setEditingGroup(null);
       await loadProfile();
     } catch (e) {
@@ -291,18 +331,31 @@ export default function ProfileScreen() {
     >
       {PROFILE_GROUPS.map((group) => {
         const isEditing = editingGroup === group.key;
+        const borderAnim = getCardBorderAnim(group.key);
+        const cardBorderStyle = {
+          borderColor: borderAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [PROFILE_THEME.border, PROFILE_THEME.accent + "66"],
+          }),
+          borderWidth: borderAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [1, 2],
+          }),
+        };
         return (
           <Pressable
             key={group.key}
-            style={[styles.card, isEditing && styles.cardEditing]}
+            style={({ pressed }) => [styles.cardWrap, typeof pressed === "boolean" && pressed && styles.cardPressed]}
             onLongPress={() => {
               if (isEditing) return;
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              runProfileCardLayoutAnim();
               setEditInitialForm({ ...form });
               setEditingGroup(group.key);
             }}
             delayLongPress={400}
           >
+            <Animated.View style={[styles.card, cardBorderStyle]}>
             <Text style={styles.cardTitle}>{group.title}</Text>
 
             {group.type === "basic" && group.fields.map((key, i) => {
@@ -486,7 +539,13 @@ export default function ProfileScreen() {
               <View style={styles.cardFooterActions}>
                 <TouchableOpacity
                   style={styles.circleBtn}
-                  onPress={() => { setEditingGroup(null); setForm(editInitialForm); setTagInput(""); setTagInputKey(null); }}
+                  onPress={() => {
+                    runProfileCardLayoutAnim();
+                    setEditingGroup(null);
+                    setForm(editInitialForm);
+                    setTagInput("");
+                    setTagInputKey(null);
+                  }}
                   disabled={saving}
                   activeOpacity={0.7}
                 >
@@ -506,6 +565,7 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               </View>
             )}
+            </Animated.View>
           </Pressable>
         );
       })}
@@ -723,16 +783,23 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: "600", marginBottom: 4, color: PROFILE_THEME.text, fontFamily: FONT_SANS_BOLD },
   hint: { fontSize: 16, color: PROFILE_THEME.textSecondary, marginBottom: 16, fontFamily: FONT_SANS_BOLD },
 
+  cardWrap: {
+    marginBottom: 14,
+  },
   card: {
     backgroundColor: "#fff",
     borderRadius: 16,
     padding: 18,
-    marginBottom: 14,
     borderWidth: 1,
     borderColor: PROFILE_THEME.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  cardEditing: {
-    borderColor: PROFILE_THEME.accent + "40",
+  cardPressed: {
+    opacity: 0.98,
   },
   cardTitle: {
     fontSize: 14,

@@ -17,12 +17,24 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { calendarTheme as theme } from "@/lib/calendarTheme";
 import { FONT_SANS, FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
-import type { SymptomEntry } from "@/types/calendar";
+import { useAuth } from "@/contexts/auth";
+import { useSubscription } from "@/contexts/subscription";
+import { generateSymptomMeta } from "@/lib/api";
+import {
+  getKeywordsFromEntry,
+  symptomCategoryNeedsKeywords,
+  type SymptomEntry,
+} from "@/types/calendar";
 
 interface EntryActionSheetProps {
   entry: SymptomEntry | null;
   onClose: () => void;
-  onUpdateEntry: (entryId: string, nextSummary: string) => Promise<void>;
+  onUpdateEntry: (
+    entryId: string,
+    nextSummary: string,
+    keywords?: string[] | null,
+    severity?: string,
+  ) => Promise<void>;
   onDeleteEntry: (entryId: string) => Promise<void>;
 }
 
@@ -32,6 +44,8 @@ export function EntryActionSheet({
   onUpdateEntry,
   onDeleteEntry,
 }: EntryActionSheetProps) {
+  const { session } = useAuth();
+  const { status: sub } = useSubscription();
   const { height: screenH } = useWindowDimensions();
   const slideAnim = useRef(new Animated.Value(screenH)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
@@ -100,7 +114,23 @@ export function EntryActionSheet({
     }
     setSaving(true);
     try {
-      await onUpdateEntry(entry.id, next);
+      let keywords: string[] | undefined = undefined;
+      let severity: string | undefined = undefined;
+      const needsKw = symptomCategoryNeedsKeywords(entry.category);
+      const existingKw = getKeywordsFromEntry(entry);
+      if (needsKw && existingKw.length === 0 && sub?.isPro) {
+        const auto = await generateSymptomMeta(next, session?.access_token ?? null, {
+          category:
+            entry.category === "symptom_feeling" || entry.category === "medication_supplement"
+              ? entry.category
+              : undefined,
+        });
+        if (auto.keywords.length > 0) {
+          keywords = auto.keywords;
+          severity = auto.severity;
+        }
+      }
+      await onUpdateEntry(entry.id, next, keywords, severity);
       dismiss();
     } catch (e) {
       Alert.alert("Update failed", e instanceof Error ? e.message : String(e));

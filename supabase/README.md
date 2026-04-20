@@ -1,5 +1,7 @@
 # Supabase 初始化说明
 
+全仓 **AI / 可计费模型调用清单**（Next API、Edge Functions、脚本等）见仓库根目录 [`docs/ai-usage-inventory.md`](../docs/ai-usage-inventory.md)。
+
 ## 1. 执行 SQL 迁移
 
 在 Supabase Dashboard → SQL Editor 中执行：

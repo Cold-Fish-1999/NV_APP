@@ -12,7 +12,9 @@ import {
   TextInput,
   Keyboard,
   ActivityIndicator,
+  TouchableOpacity,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { calendarTheme as theme, severityColors } from "@/lib/calendarTheme";
 import { formatWeekday, formatTime, toLocalDateStr } from "@/lib/dateUtils";
 import { fontSerif, FONT_SANS, FONT_SANS_MEDIUM, FONT_SANS_BOLD } from "@/lib/fonts";
@@ -20,7 +22,14 @@ import Svg, { Path, Circle } from "react-native-svg";
 import { fetchDayWeather, weatherCodeToLabel, type DayWeather } from "@/lib/weatherApi";
 import { useUserLocation } from "@/lib/useUserLocation";
 import type { DayAggregated } from "@/lib/calendarService";
-import type { SymptomEntry } from "@/types/calendar";
+import { generateSymptomMeta } from "@/lib/api";
+import { useAuth } from "@/contexts/auth";
+import { useSubscription } from "@/contexts/subscription";
+import {
+  symptomCategoryNeedsKeywords,
+  getKeywordsFromEntry,
+  type SymptomEntry,
+} from "@/types/calendar";
 
 function WeatherIcon({ code, size = 18, color = "#9A9A9A" }: { code: number; size?: number; color?: string }) {
   const s = size;
@@ -158,13 +167,67 @@ function InlineEntryRow({
   entry: SymptomEntry;
   isLastEntry: boolean;
   isLastItem: boolean;
-  onUpdate: (id: string, s: string) => Promise<void>;
+  onUpdate: (
+    id: string,
+    s: string,
+    keywords?: string[] | null,
+    severity?: string,
+  ) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
+  const { session } = useAuth();
+  const { status: sub } = useSubscription();
+  const needsKw = symptomCategoryNeedsKeywords(entry.category);
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(entry.summary);
+  const [draftKeywords, setDraftKeywords] = useState<string[]>(() => getKeywordsFromEntry(entry));
+  const [customTag, setCustomTag] = useState("");
+  const [tagAddOpen, setTagAddOpen] = useState(false);
+  const tagInputRef = useRef<TextInput>(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (editing) return;
+    setDraft(entry.summary);
+    setDraftKeywords(getKeywordsFromEntry(entry));
+    setTagAddOpen(false);
+    setCustomTag("");
+  }, [entry, editing]);
+
+  useEffect(() => {
+    if (!tagAddOpen) return;
+    const id = requestAnimationFrame(() => tagInputRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [tagAddOpen]);
+
+  const displayTags = getKeywordsFromEntry(entry);
+
+  const removeDraftKeyword = (k: string) => {
+    setDraftKeywords((prev) => prev.filter((x) => x !== k));
+  };
+
+  const closeTagAddBar = useCallback(() => {
+    setTagAddOpen(false);
+    setCustomTag("");
+    Keyboard.dismiss();
+  }, []);
+
+  const confirmTagAdd = useCallback(() => {
+    const t = customTag.trim();
+    if (!t) {
+      closeTagAddBar();
+      return;
+    }
+    const lower = t.toLowerCase();
+    setDraftKeywords((prev) => {
+      if (prev.some((x) => x.toLowerCase() === lower)) return prev;
+      return [...prev, t];
+    });
+    setCustomTag("");
+    setTagAddOpen(false);
+    Keyboard.dismiss();
+  }, [customTag, closeTagAddBar]);
 
   const hideBottomLine = isLastEntry && isLastItem;
 
@@ -176,7 +239,21 @@ function InlineEntryRow({
     }
     setSaving(true);
     try {
-      await onUpdate(entry.id, trimmed);
+      let kwList: string[] | undefined = needsKw ? [...draftKeywords] : undefined;
+      let severityOut: string | undefined = undefined;
+      if (needsKw && draftKeywords.length === 0 && sub?.isPro) {
+        const auto = await generateSymptomMeta(trimmed, session?.access_token ?? null, {
+          category:
+            entry.category === "symptom_feeling" || entry.category === "medication_supplement"
+              ? entry.category
+              : undefined,
+        });
+        if (auto.keywords.length > 0) {
+          kwList = auto.keywords;
+          severityOut = auto.severity;
+        }
+      }
+      await onUpdate(entry.id, trimmed, kwList, severityOut);
       setEditing(false);
       setMenuOpen(false);
     } catch (e) {
@@ -222,26 +299,104 @@ function InlineEntryRow({
           {editing ? (
             <View style={styles.editWrap}>
               <TextInput
-                style={styles.editInput}
+                style={[styles.editInput, { fontFamily: fontSerif(draft) }]}
                 value={draft}
                 onChangeText={setDraft}
                 multiline
                 autoFocus
                 placeholderTextColor={theme.textMuted}
+                textAlignVertical="top"
               />
+              {needsKw ? (
+                <View style={styles.kwEditBlock}>
+                  <Text style={styles.kwEditHint}>Keywords</Text>
+                  <View style={styles.kwTagRow}>
+                    {draftKeywords.map((tag) => {
+                      const sc = entry.severity ? severityColors[entry.severity] : undefined;
+                      return (
+                        <View
+                          key={tag}
+                          style={[styles.kwChipRemovable, sc && { backgroundColor: sc.bg }]}
+                        >
+                          <Text
+                            style={[styles.kwChipRemovableTxt, sc && { color: sc.text }]}
+                            numberOfLines={1}
+                          >
+                            {tag}
+                          </Text>
+                          <Pressable
+                            onPress={() => removeDraftKeyword(tag)}
+                            hitSlop={10}
+                            style={styles.kwChipCloseHit}
+                          >
+                            <Ionicons name="close" size={13} color={sc?.text ?? theme.textSecondary} />
+                          </Pressable>
+                        </View>
+                      );
+                    })}
+                    <TouchableOpacity
+                      style={[styles.kwChipAdd, tagAddOpen && styles.kwChipAddOn]}
+                      onPress={() => {
+                        if (!tagAddOpen) setTagAddOpen(true);
+                      }}
+                      disabled={tagAddOpen}
+                      activeOpacity={0.65}
+                    >
+                      <Ionicons
+                        name="add"
+                        size={15}
+                        color={tagAddOpen ? theme.primary : theme.textMuted}
+                      />
+                    </TouchableOpacity>
+                    {tagAddOpen ? (
+                      <>
+                        <TextInput
+                          ref={tagInputRef}
+                          style={styles.kwCustomInput}
+                          value={customTag}
+                          onChangeText={setCustomTag}
+                          placeholder="Add tag"
+                          placeholderTextColor={theme.textMuted}
+                          onSubmitEditing={confirmTagAdd}
+                          returnKeyType="done"
+                          blurOnSubmit={false}
+                          textAlignVertical="center"
+                        />
+                        <TouchableOpacity style={styles.kwConfirmKw} onPress={confirmTagAdd} activeOpacity={0.7}>
+                          <Ionicons name="checkmark" size={14} color="#fff" />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.kwCancelKw} onPress={closeTagAddBar} activeOpacity={0.7}>
+                          <Ionicons name="close" size={14} color={theme.textSecondary} />
+                        </TouchableOpacity>
+                      </>
+                    ) : null}
+                  </View>
+                </View>
+              ) : null}
               <View style={styles.editActions}>
                 <Pressable
-                  onPress={() => { setEditing(false); setDraft(entry.summary); Keyboard.dismiss(); }}
-                  style={styles.editBtn}
+                  onPress={() => {
+                    setEditing(false);
+                    setDraft(entry.summary);
+                    setDraftKeywords(getKeywordsFromEntry(entry));
+                    setCustomTag("");
+                    setTagAddOpen(false);
+                    Keyboard.dismiss();
+                  }}
+                  disabled={saving}
+                  style={[styles.menuItem, saving && { opacity: 0.5 }]}
                 >
-                  <Text style={styles.editBtnCancel}>Cancel</Text>
+                  <Text style={styles.menuText}>Cancel</Text>
                 </Pressable>
+                <View style={styles.menuDivider} />
                 <Pressable
                   onPress={handleSave}
-                  style={[styles.editBtn, styles.editBtnSave, saving && { opacity: 0.5 }]}
                   disabled={saving}
+                  style={[styles.menuItem, saving && { opacity: 0.5 }]}
                 >
-                  <Text style={styles.editBtnSaveText}>{saving ? "…" : "Save"}</Text>
+                  <Text style={[styles.menuText, styles.editSaveMenuText]}>
+                    {saving ? "…" : "Save"}
+                  </Text>
                 </Pressable>
               </View>
             </View>
@@ -257,9 +412,9 @@ function InlineEntryRow({
                   <Text style={styles.ellipsis}>⋯</Text>
                 </Pressable>
               </View>
-              {(entry.tags?.length ?? 0) > 0 && (
+              {displayTags.length > 0 ? (
                 <View style={styles.entryTagsRow}>
-                  {entry.tags!.map((tag) => {
+                  {displayTags.map((tag) => {
                     const sc = entry.severity ? severityColors[entry.severity] : undefined;
                     return (
                       <View key={tag} style={[styles.pill, sc && { backgroundColor: sc.bg }]}>
@@ -268,7 +423,7 @@ function InlineEntryRow({
                     );
                   })}
                 </View>
-              )}
+              ) : null}
             </View>
           )}
         </View>
@@ -282,7 +437,14 @@ function InlineEntryRow({
           </View>
           <View style={styles.menuWrap}>
             <Pressable
-              onPress={() => { setEditing(true); setMenuOpen(false); setDraft(entry.summary); }}
+              onPress={() => {
+                setEditing(true);
+                setMenuOpen(false);
+                setDraft(entry.summary);
+                setDraftKeywords(getKeywordsFromEntry(entry));
+                setCustomTag("");
+                setTagAddOpen(false);
+              }}
               style={styles.menuItem}
             >
               <Text style={styles.menuText}>Edit</Text>
@@ -304,7 +466,12 @@ function InlineEntryRow({
 
 interface TimelineDayListProps {
   days: DayAggregated[];
-  onUpdateEntry: (entryId: string, nextSummary: string) => Promise<void>;
+  onUpdateEntry: (
+    entryId: string,
+    nextSummary: string,
+    keywords?: string[] | null,
+    severity?: string,
+  ) => Promise<void>;
   onDeleteEntry: (entryId: string) => Promise<void>;
   headerComponent?: React.ReactNode;
 }
@@ -733,34 +900,142 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
-  /* ---- Popover menu ---- */
+  /* ---- Popover menu（Edit/Delete）与编辑态 Cancel/Save 共用字号与右对齐 ---- */
   menuWrap: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "flex-end",
     paddingLeft: 10,
+    paddingRight: 8,
     paddingVertical: 4,
     gap: 0,
   },
   menuItem: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 6 },
-  menuText: { fontSize: 13, fontWeight: "500", fontFamily: FONT_SANS_MEDIUM, color: theme.textSecondary },
-  menuTextDanger: { color: "#C0392B" },
-  menuDivider: { width: 1, height: 14, backgroundColor: theme.border },
-
-  /* ---- Inline edit ---- */
-  editWrap: { paddingLeft: 10, paddingRight: 8, paddingVertical: 6, flex: 1 },
-  editInput: {
+  menuText: {
     fontSize: 14,
     lineHeight: 20,
+    fontWeight: "500",
+    fontFamily: FONT_SANS_MEDIUM,
+    color: theme.textSecondary,
+  },
+  menuTextDanger: { color: "#C0392B" },
+  menuDivider: { width: 1, height: 16, backgroundColor: theme.border },
+
+  /* ---- Inline edit：编辑态正文比列表略大 ---- */
+  editWrap: { paddingLeft: 10, paddingRight: 8, paddingVertical: 6, flex: 1 },
+  editInput: {
+    fontSize: 16,
+    lineHeight: 25,
+    fontFamily: FONT_SANS,
     color: theme.text,
+    letterSpacing: -0.1,
+    fontWeight: "400",
     borderBottomWidth: 1,
     borderBottomColor: theme.primaryMuted,
-    paddingBottom: 6,
+    paddingBottom: 4,
     paddingTop: 0,
-    minHeight: 28,
+    /** 单行时与下划线对齐；多行会随内容增高 */
+    minHeight: 34,
   },
-  editActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 8 },
-  editBtn: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 6 },
-  editBtnCancel: { fontSize: 13, fontWeight: "500", fontFamily: FONT_SANS_MEDIUM, color: theme.textSecondary },
-  editBtnSave: { backgroundColor: theme.primary },
-  editBtnSaveText: { fontSize: 13, fontWeight: "600", fontFamily: FONT_SANS_BOLD, color: "#fff" },
+  /** 与 ⋯ 菜单里 Edit / Delete 同系文字按钮 */
+  editActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 10,
+  },
+  editSaveMenuText: {
+    color: theme.primary,
+  },
+
+  kwEditBlock: { marginTop: 10 },
+  kwEditHint: {
+    fontSize: 11,
+    fontFamily: FONT_SANS_MEDIUM,
+    color: theme.textMuted,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  /** 与 Add Health Record 的 tag 行一致：flexWrap + 底部加词条 */
+  kwTagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center",
+  },
+  /** 胶囊高度与 Add tag 输入框 kwCustomInput.height 对齐 */
+  kwChipRemovable: {
+    flexDirection: "row",
+    alignItems: "center",
+    maxWidth: "100%",
+    height: 32,
+    paddingLeft: 10,
+    paddingRight: 4,
+    paddingVertical: 0,
+    borderRadius: 16,
+    backgroundColor: theme.primaryLight,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0,0,0,0.06)",
+  },
+  kwChipRemovableTxt: {
+    flexShrink: 1,
+    fontSize: 15,
+    lineHeight: 20,
+    fontFamily: FONT_SANS,
+    fontWeight: "400",
+    letterSpacing: -0.1,
+    color: theme.text,
+  },
+  kwChipCloseHit: {
+    paddingLeft: 4,
+    paddingVertical: 2,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  kwChipAdd: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(0,0,0,0.04)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  kwChipAddOn: {
+    backgroundColor: theme.primaryLight,
+  },
+  kwCustomInput: {
+    height: 32,
+    maxWidth: 194,
+    minWidth: 144,
+    flexGrow: 0,
+    flexShrink: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 0,
+    borderRadius: 12,
+    backgroundColor: "rgba(0,0,0,0.04)",
+    fontSize: 15,
+    lineHeight: 20,
+    fontFamily: FONT_SANS,
+    color: theme.text,
+  },
+  kwConfirmKw: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  kwCancelKw: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(0,0,0,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

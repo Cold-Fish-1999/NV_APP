@@ -239,6 +239,9 @@ export async function analyzeProfileDocumentUploads(
   };
 }
 
+/**
+ * Pro：从单条健康记录正文抽取 keywords + severity（服务端专用路由，无聊天上下文/tools）。
+ */
 export async function generateSymptomMeta(
   description: string,
   accessToken?: string | null,
@@ -251,33 +254,27 @@ export async function generateSymptomMeta(
   }
   if (!token) return { keywords: [], severity: "medium" };
 
-  const isMed = options?.category === "medication_supplement";
-  const instruction = isMed
-    ? `You are a medication log assistant. From the user's text about drugs or supplements, respond ONLY with JSON: {"keywords":["name1","name2"],"severity":"low|medium|high|positive"}. Keywords: short canonical drug/supplement names (English or user's language), max 5. Severity reflects how they feel after taking if mentioned, else "medium". No extra text.\n\nDescription: "${description.replace(/"/g, '\\"')}"`
-    : `You are a health symptom tagger. Given the user's symptom description, respond ONLY with a JSON object: {"keywords":["keyword1","keyword2"],"severity":"low|medium|high|positive"}. No extra text.\n\nDescription: "${description.replace(/"/g, '\\"')}"`;
-
+  const category = options?.category;
   try {
-    const res = await fetchWithApiBaseFallback("/api/chat", {
+    const res = await fetchWithApiBaseFallback("/api/health-record-meta", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        message: instruction,
-        localDate: toLocalDateStr(),
+        description: description.trim(),
+        ...(category ? { category } : {}),
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return { keywords: [], severity: "medium" };
-    const reply: string = data.reply ?? "";
-    const match = reply.match(/\{[\s\S]*\}/);
-    if (!match) return { keywords: [], severity: "medium" };
-    const parsed = JSON.parse(match[0]);
-    return {
-      keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(String).slice(0, 5) : [],
-      severity: ["low", "medium", "high", "positive"].includes(parsed.severity) ? parsed.severity : "medium",
-    };
+    const keywords = Array.isArray(data.keywords)
+      ? data.keywords.map(String).slice(0, 5)
+      : [];
+    const sev = typeof data.severity === "string" ? data.severity : "medium";
+    const severity = ["low", "medium", "high", "positive"].includes(sev) ? sev : "medium";
+    return { keywords, severity };
   } catch {
     return { keywords: [], severity: "medium" };
   }

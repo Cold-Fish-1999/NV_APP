@@ -61,16 +61,43 @@ export function groupByDateAndAggregate(
   });
 }
 
-/** 更新一条 symptom_summaries 记录的 summary */
+/** 更新一条 symptom_summaries 记录；传入 keywords 时同步更新 tags 与 meta.symptom_keywords；severity 仅在有值时写入 */
 export async function updateSymptomSummary(
   entryId: string,
-  summary: string
+  payload: { summary: string; keywords?: string[] | null; severity?: string },
 ): Promise<SymptomEntry> {
+  const summary = payload.summary.trim();
+  const update: Record<string, unknown> = { summary };
+
+  if (payload.severity !== undefined) {
+    update.severity = payload.severity;
+  }
+
+  if (payload.keywords !== undefined) {
+    const cleaned = payload.keywords.map((k) => String(k).trim()).filter(Boolean);
+    update.tags = cleaned;
+    const { data: existing, error: fetchErr } = await supabase
+      .from("symptom_summaries")
+      .select("meta")
+      .eq("id", entryId)
+      .single();
+    if (fetchErr) throw fetchErr;
+    const meta: Record<string, unknown> = {
+      ...((existing?.meta as Record<string, unknown> | null) ?? {}),
+    };
+    if (cleaned.length === 0) {
+      delete meta.symptom_keywords;
+    } else {
+      meta.symptom_keywords = cleaned;
+    }
+    update.meta = meta;
+  }
+
   const { data, error } = await supabase
     .from("symptom_summaries")
-    .update({ summary })
+    .update(update)
     .eq("id", entryId)
-    .select("id, local_date, created_at, summary, meta, tags")
+    .select("id, local_date, created_at, summary, severity, meta, tags, category")
     .single();
 
   if (error) throw error;

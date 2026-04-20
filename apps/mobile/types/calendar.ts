@@ -31,6 +31,18 @@ export interface SymptomEntry {
   category?: string | null;
 }
 
+/** 从 meta.symptom_keywords 或 tags 解析展示用关键词 */
+export function getKeywordsFromEntry(e: SymptomEntry): string[] {
+  const fromMeta = e.meta?.symptom_keywords;
+  if (Array.isArray(fromMeta) && fromMeta.length > 0) {
+    return fromMeta.map((x) => String(x).trim()).filter(Boolean);
+  }
+  if (Array.isArray(e.tags) && e.tags.length > 0) {
+    return e.tags.map((x) => String(x).trim()).filter(Boolean);
+  }
+  return [];
+}
+
 /** 按日期聚合的摘要（用于日历列表） */
 export interface DayAggregated {
   date: string; // YYYY-MM-DD

@@ -3,13 +3,25 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Platform } 
 import { formatTime } from "@/lib/dateUtils";
 import { calendarTheme as theme } from "@/lib/calendarTheme";
 import { FONT_SANS_BOLD } from "@/lib/fonts";
-import type { SymptomEntry } from "@/types/calendar";
+import {
+  getKeywordsFromEntry,
+  symptomCategoryNeedsKeywords,
+  type SymptomEntry,
+} from "@/types/calendar";
 import { TIME_SLOTS } from "@/lib/dateUtils";
+import { useAuth } from "@/contexts/auth";
+import { useSubscription } from "@/contexts/subscription";
+import { generateSymptomMeta } from "@/lib/api";
 
 interface TimeSlotSectionProps {
   slotKey: string;
   entries: SymptomEntry[];
-  onUpdateEntry: (entryId: string, nextSummary: string) => Promise<void>;
+  onUpdateEntry: (
+    entryId: string,
+    nextSummary: string,
+    keywords?: string[] | null,
+    severity?: string,
+  ) => Promise<void>;
   onDeleteEntry: (entryId: string) => Promise<void>;
 }
 
@@ -33,6 +45,8 @@ export function TimeSlotSection({
   onUpdateEntry,
   onDeleteEntry,
 }: TimeSlotSectionProps) {
+  const { session } = useAuth();
+  const { status: sub } = useSubscription();
   const config = TIME_SLOTS.find((s) => s.key === slotKey);
   const slotBg = SLOT_BG_COLORS[slotKey] ?? theme.bgSecondary;
   const slotTitleColor = SLOT_TITLE_COLORS[slotKey] ?? theme.textSecondary;
@@ -62,7 +76,25 @@ export function TimeSlotSection({
     const runUpdate = async () => {
       setSavingId(entryId);
       try {
-        await onUpdateEntry(entryId, next);
+        const entry = entries.find((e) => e.id === entryId);
+        let keywords: string[] | undefined = undefined;
+        let severity: string | undefined = undefined;
+        if (entry && symptomCategoryNeedsKeywords(entry.category)) {
+          const existingKw = getKeywordsFromEntry(entry);
+          if (existingKw.length === 0 && sub?.isPro) {
+            const auto = await generateSymptomMeta(next, session?.access_token ?? null, {
+              category:
+                entry.category === "symptom_feeling" || entry.category === "medication_supplement"
+                  ? entry.category
+                  : undefined,
+            });
+            if (auto.keywords.length > 0) {
+              keywords = auto.keywords;
+              severity = auto.severity;
+            }
+          }
+        }
+        await onUpdateEntry(entryId, next, keywords, severity);
         cancelEdit();
       } catch (e) {
         Alert.alert("Update failed", e instanceof Error ? e.message : String(e));

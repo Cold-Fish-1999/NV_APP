@@ -13,7 +13,6 @@ import {
   Pressable,
   Keyboard,
   TouchableWithoutFeedback,
-  KeyboardAvoidingView,
   Animated,
   Easing,
   LayoutAnimation,
@@ -67,6 +66,15 @@ import {
   mapProfileDocumentLimitError,
 } from "@/lib/docUploadLimits";
 import { guessDocumentPreviewKind, type DocumentPreviewKind } from "@/lib/documentPreviewUtils";
+import { keyboardLiftForCard } from "@/lib/keyboardCardLift";
+import {
+  computeFabBottom,
+  computeCardBottomAboveFab,
+  FAB_SIZE_PX,
+  FAB_FROM_RIGHT_PX,
+  CARD_FROM_LEFT_PX,
+  CARD_FROM_RIGHT_PX,
+} from "@/lib/fabCardLayout";
 import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
 
 const DEFAULT_CATEGORY: DocCategory = "other";
@@ -150,6 +158,32 @@ export default function ProfileDocumentsScreen() {
   const insets = useSafeAreaInsets();
   const headerH = useHeaderHeight();
   const uploadSlideAnim = useRef(new Animated.Value(1)).current;
+  const kbAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (e) => {
+        const lift = keyboardLiftForCard(e.endCoordinates.height, insets.bottom);
+        Animated.timing(kbAnim, {
+          toValue: -lift,
+          duration: e.duration ?? 250,
+          useNativeDriver: true,
+        }).start();
+      },
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      (e) => {
+        Animated.timing(kbAnim, {
+          toValue: 0,
+          duration: e.duration ?? 250,
+          useNativeDriver: true,
+        }).start();
+      },
+    );
+    return () => { show.remove(); hide.remove(); };
+  }, [insets.bottom, kbAnim]);
 
   useEffect(() => {
     if (showUploadModal) {
@@ -680,7 +714,8 @@ export default function ProfileDocumentsScreen() {
     );
   }
 
-  const fabBottom = (insets.bottom > 0 ? insets.bottom - 12 : 12) + 52 + 16;
+  const fabBottom = computeFabBottom(insets.bottom);
+  const uploadCardBottom = computeCardBottomAboveFab(fabBottom);
 
   const docModeOn = draftImages.length > 0 && isDocumentDraft(draftImages[0]);
   const imageModeOn = draftImages.length > 0 && !isDocumentDraft(draftImages[0]);
@@ -1000,17 +1035,18 @@ export default function ProfileDocumentsScreen() {
             <Pressable style={StyleSheet.absoluteFill} onPress={closeUploadModal} />
           </Animated.View>
 
-          <KeyboardAvoidingView
+          <View
             style={styles.uploadCardWrap}
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={0}
             pointerEvents="box-none"
           >
             <Animated.View
               style={[
                 styles.uploadCard,
-                { bottom: fabBottom + 52 + 12 },
-                { transform: [{ translateY: uploadSlideAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 400] }) }] },
+                { bottom: uploadCardBottom },
+                { transform: [
+                  { translateY: uploadSlideAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 400] }) },
+                  { translateY: kbAnim },
+                ] },
               ]}
             >
               <BlurView intensity={72} tint="light" style={StyleSheet.absoluteFill} />
@@ -1197,7 +1233,7 @@ export default function ProfileDocumentsScreen() {
                 numberOfLines={3}
               />
             </Animated.View>
-          </KeyboardAvoidingView>
+          </View>
         </>
       )}
 
@@ -1381,10 +1417,10 @@ const styles = StyleSheet.create({
 
   fab: {
     position: "absolute",
-    right: 20,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    right: FAB_FROM_RIGHT_PX,
+    width: FAB_SIZE_PX,
+    height: FAB_SIZE_PX,
+    borderRadius: FAB_SIZE_PX / 2,
     backgroundColor: DOC_THEME.accent,
     alignItems: "center",
     justifyContent: "center",
@@ -1411,8 +1447,8 @@ const styles = StyleSheet.create({
   },
   uploadCard: {
     position: "absolute",
-    right: 16,
-    left: 16,
+    left: CARD_FROM_LEFT_PX,
+    right: CARD_FROM_RIGHT_PX,
     borderRadius: 20,
     overflow: "hidden",
     padding: 14,
