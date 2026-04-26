@@ -279,3 +279,75 @@ export async function generateSymptomMeta(
     return { keywords: [], severity: "medium" };
   }
 }
+
+export type AiUsageEventDetail = {
+  id: string;
+  createdAt: string;
+  provider: string;
+  model: string;
+  feature: string;
+  source: string;
+  inputTokens: number;
+  outputTokens: number;
+  metadata: Record<string, unknown> | null;
+};
+
+export type AiUsageSummary = {
+  since: string;
+  days: number;
+  totalCalls: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  byProvider: {
+    openai: { inputTokens: number; outputTokens: number; calls: number };
+    anthropic: { inputTokens: number; outputTokens: number; calls: number };
+  };
+  byFeature: Record<string, { inputTokens: number; outputTokens: number; calls: number }>;
+  events?: AiUsageEventDetail[];
+  eventLimit?: number;
+};
+
+/** Profile Test UI：聚合 ai_usage_events（需已部署迁移且各路由已接入 recordAiUsage） */
+export async function fetchAiUsageSummary(
+  accessToken?: string | null,
+  days = 30,
+  options?: { includeEventDetails?: boolean; eventLimit?: number },
+): Promise<AiUsageSummary | null> {
+  let token = accessToken;
+  if (!token) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    token = session?.access_token ?? null;
+  }
+  if (!token) return null;
+
+  const include = options?.includeEventDetails === true;
+  const evLimit = options?.eventLimit ?? 150;
+  const q = new URLSearchParams();
+  q.set("days", String(days));
+  if (include) {
+    q.set("details", "1");
+    q.set("eventLimit", String(evLimit));
+  }
+
+  try {
+    const res = await fetchWithApiBaseFallback(
+      `/api/ai-usage-summary?${q.toString()}`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      },
+      30_000,
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.warn("[fetchAiUsageSummary]", res.status, data?.error);
+      return null;
+    }
+    return data as AiUsageSummary;
+  } catch (e) {
+    console.warn("[fetchAiUsageSummary]", e);
+    return null;
+  }
+}

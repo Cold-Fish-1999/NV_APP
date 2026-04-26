@@ -42,6 +42,7 @@ import {
 } from "@/lib/profileService";
 import { getOnboardingSurvey } from "@/app/onboarding";
 import type { OnboardingSurvey } from "@/lib/onboardingInsight";
+import { AiUsageTestPanel } from "@/components/profile/AiUsageTestPanel";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -748,6 +749,10 @@ export default function ProfileScreen() {
           </View>
         )}
       </View>
+
+      {__DEV__ ? (
+        <AiUsageTestPanel accessToken={session?.access_token} />
+      ) : null}
 
       <View style={styles.uidBox}>
         <Text style={styles.uidLabel}>User UID</Text>

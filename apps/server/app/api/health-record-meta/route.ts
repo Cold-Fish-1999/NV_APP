@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { isPaidUser } from "@/lib/subscription";
-import { normalizeKeywords } from "@/lib/symptomTaxonomy";
+import { normalizeSymptomKeywordsForUserText } from "@/lib/symptomTaxonomy";
+import {
+  AI_USAGE_FEATURES,
+  recordAiUsage,
+  tokensFromAnthropicUsage,
+} from "@/lib/aiUsage";
 
 /**
  * 付费用户：从单条手动健康记录（症状/用药纯文本）抽取 keywords + severity。
@@ -25,13 +30,20 @@ type ContentBlock = { type: "text"; text: string } | { type: string; [k: string]
 type AnthropicResponse = {
   content: ContentBlock[];
   stop_reason: string;
+  usage?: { input_tokens?: number; output_tokens?: number };
 };
 
 function systemPromptSymptom(): string {
   return [
     "You extract metadata from exactly one user-written symptom or feeling record.",
+    "HARD RULE (ZH): Never use keyword 胃痛 unless the user's text itself clearly mentions the stomach organ (胃/脘 etc.); vague 肚子/腹部/肠胃 alone must NOT be labeled 胃痛 — use 腹部不适 or 肠胃不适 instead.",
     'Respond with ONLY a JSON object: {"keywords":["..."],"severity":"low"|"medium"|"high"|"positive"}.',
-    "keywords: up to 5 short phrases in the user's language or English; no duplicates.",
+    "keywords: Usually ONE tag (user language or English). Add more (max 5) ONLY if the user clearly names several DISTINCT symptoms/feelings — not one symptom with extra detail.",
+    "Granularity: aim for mid-level symptom labels — useful for grouping, not clinical overreach.",
+    "Do NOT infer organs, sites, or diagnoses the user did not say (e.g. do not use 胃痛 / gastric pain for vague belly discomfort unless they clearly said stomach/gastric).",
+    "Do NOT use overly vague umbrellas when a body region or symptom type is implied (avoid 身体不适 or generic 不舒服 alone when they described e.g. belly issues).",
+    "Example (ZH): 肚子不适 → prefer 腹部不适 or 肠胃不适 — not 胃痛 (too specific without \"胃\"), not 身体不适 (too broad).",
+    "Example (EN): vague lower abdominal discomfort → e.g. abdominal discomfort or GI discomfort — not stomach pain unless they said stomach.",
     "severity: how intense or impactful the symptom is, or positive if they report improvement.",
     "No markdown fences, no explanation, no other keys.",
   ].join(" ");
@@ -41,7 +53,9 @@ function systemPromptMedication(): string {
   return [
     "You extract metadata from exactly one user-written medication or supplement log.",
     'Respond with ONLY JSON: {"keywords":["..."],"severity":"low"|"medium"|"high"|"positive"}.',
-    "keywords: up to 5 canonical drug or supplement names (user language or English).",
+    "keywords: Usually ONE recognizable drug or supplement name (user language or English).",
+    "Add another name only if the user clearly mentions DIFFERENT medications or supplements in the same entry (max 5 total).",
+    "Use common product/class names — not full dosage schedules or long brand stories.",
     'severity: how they feel after taking if mentioned; otherwise use "medium".',
     "No markdown fences, no explanation, no other keys.",
   ].join(" ");
@@ -70,7 +84,10 @@ function parseMetaJson(raw: string): { keywords: string[]; severity: string } | 
   }
 }
 
-async function callAnthropic(system: string, userText: string): Promise<string> {
+async function callAnthropic(
+  system: string,
+  userText: string,
+): Promise<{ text: string; usage?: AnthropicResponse["usage"] }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
 
@@ -96,7 +113,10 @@ async function callAnthropic(system: string, userText: string): Promise<string> 
   }
 
   const data = (await res.json()) as AnthropicResponse;
-  return extractText(data.content ?? []);
+  return {
+    text: extractText(data.content ?? []),
+    usage: data.usage,
+  };
 }
 
 export async function OPTIONS() {
@@ -160,15 +180,31 @@ export async function POST(request: Request) {
   const system = isMed ? systemPromptMedication() : systemPromptSymptom();
 
   try {
-    const raw = await callAnthropic(system, text);
+    const { text: raw, usage } = await callAnthropic(system, text);
     const parsed = parseMetaJson(raw);
+    const tok = tokensFromAnthropicUsage(usage);
+    void recordAiUsage({
+      userId,
+      feature: AI_USAGE_FEATURES.healthRecordMeta,
+      provider: "anthropic",
+      model: META_MODEL,
+      inputTokens: tok.inputTokens,
+      outputTokens: tok.outputTokens,
+      metadata: {
+        category: isMed ? "medication_supplement" : "symptom_feeling",
+        parseOk: parsed != null,
+      },
+    });
+
     if (!parsed) {
       return NextResponse.json(
         { keywords: [], severity: "medium", error: "parse_failed" },
         { status: 200, headers: corsHeaders }
       );
     }
-    const keywords = isMed ? parsed.keywords : normalizeKeywords(parsed.keywords);
+    const keywords = isMed
+      ? parsed.keywords
+      : normalizeSymptomKeywordsForUserText(text, parsed.keywords);
     return NextResponse.json(
       { keywords, severity: parsed.severity },
       { headers: corsHeaders }

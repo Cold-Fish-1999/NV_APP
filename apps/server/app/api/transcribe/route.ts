@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { supabaseAdmin } from "@/lib/supabase";
+import {
+  AI_USAGE_FEATURES,
+  recordAiUsage,
+  tokensFromOpenAIUsageLoose,
+} from "@/lib/aiUsage";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -100,6 +105,30 @@ export async function POST(request: Request) {
       file: normalizedFile,
       model,
       language: "zh",
+    });
+
+    const resultLoose = result as unknown as {
+      text?: string;
+      usage?: Record<string, unknown>;
+      duration?: number;
+    };
+    const usageRaw = resultLoose.usage;
+    const { inputTokens, outputTokens } = tokensFromOpenAIUsageLoose(usageRaw);
+    void recordAiUsage({
+      userId,
+      feature: AI_USAGE_FEATURES.transcribe,
+      provider: "openai",
+      model,
+      inputTokens,
+      outputTokens,
+      metadata: {
+        audio_bytes: normalizedFile.size,
+        mime_type: mimeType,
+        ...(typeof resultLoose.duration === "number"
+          ? { audio_duration_sec: resultLoose.duration }
+          : {}),
+        ...(usageRaw && Object.keys(usageRaw).length > 0 ? { openai_usage: usageRaw } : {}),
+      },
     });
 
     return NextResponse.json(

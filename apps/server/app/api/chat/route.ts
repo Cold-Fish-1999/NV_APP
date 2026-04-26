@@ -8,10 +8,16 @@ import {
   fetchChatContext,
   buildBaseContext,
   buildFullContext,
-  buildSystemPrompt,
+  getAnthropicChatStaticSystem,
+  buildChatUserContextEnvelope,
   analyzeDeepAnalysisNeed,
 } from "@/lib/chatContext";
-import { normalizeKeywords } from "@/lib/symptomTaxonomy";
+import { normalizeSymptomKeywordsForUserText } from "@/lib/symptomTaxonomy";
+import {
+  AI_USAGE_FEATURES,
+  recordAiUsage,
+  tokensFromAnthropicUsage,
+} from "@/lib/aiUsage";
 
 const FREE_DAILY_MESSAGE_LIMIT = 3;
 const FREE_MAX_MESSAGE_LENGTH = 200;
@@ -20,6 +26,7 @@ const MAX_CHAT_IMAGES = 5;
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
+/** Haiku 4.5：官方要求可缓存前缀 ≥4096 tokens，否则 cache_* 全为 0（静默不缓存）。Sonnet 4.6 为 2048。 */
 const LAYER1_MODEL = "claude-haiku-4-5-20251001";
 const LAYER2_MODEL = "claude-sonnet-4-6";
 
@@ -36,10 +43,28 @@ type AnthropicMessage = {
   content: string | ContentBlock[];
 };
 
+type AnthropicSystemBlock = {
+  type: "text";
+  text: string;
+  cache_control?: { type: "ephemeral"; ttl?: "1h" | "5m" };
+};
+
+type AnthropicToolJson = {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  cache_control?: { type: "ephemeral"; ttl?: "1h" | "5m" };
+};
+
 type AnthropicResponse = {
   content: ContentBlock[];
   stop_reason: "end_turn" | "tool_use" | "max_tokens" | "stop_sequence";
-  usage?: { input_tokens: number; output_tokens: number };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
 };
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -57,26 +82,25 @@ async function imageUrlToJpegBase64(url: string): Promise<string> {
 
 async function callAnthropic(params: {
   model: string;
-  system: string;
+  system: string | AnthropicSystemBlock[];
   messages: AnthropicMessage[];
-  tools?: Array<{
-    name: string;
-    description: string;
-    input_schema: Record<string, unknown>;
-  }>;
+  tools?: AnthropicToolJson[];
   max_tokens: number;
   temperature?: number;
 }): Promise<AnthropicResponse> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
 
+  // Anthropic prompt-cache prefix hierarchy is tools → system → messages (docs).
+  // Build body in that key order so JSON mirrors the logical prefix; server does not
+  // use "messages before tools" in wire JSON to mean messages sit between system and tools.
   const body: Record<string, unknown> = {
     model: params.model,
     max_tokens: params.max_tokens,
-    system: params.system,
-    messages: params.messages,
   };
   if (params.tools?.length) body.tools = params.tools;
+  body.system = params.system;
+  body.messages = params.messages;
   if (params.temperature !== undefined) body.temperature = params.temperature;
 
   const res = await fetch(ANTHROPIC_API_URL, {
@@ -95,6 +119,100 @@ async function callAnthropic(params: {
   }
 
   return (await res.json()) as AnthropicResponse;
+}
+
+/** 开发环境默认 true；生产需 `CHAT_LOG_FULL_PROMPT=1` 或请求头 `x-nvapp-log-full-prompt: 1` */
+function shouldLogFullChatPrompt(request: Request): boolean {
+  const h = request.headers.get("x-nvapp-log-full-prompt")?.trim().toLowerCase();
+  if (h === "1" || h === "true") return true;
+  if (process.env.CHAT_LOG_FULL_PROMPT === "1") return true;
+  if ((process.env.NODE_ENV ?? "development") !== "production") return true;
+  if (process.env.VERCEL_ENV === "preview") return true;
+  return false;
+}
+
+function redactImageBlocksForLog(messages: AnthropicMessage[]): unknown[] {
+  return messages.map((m) => ({
+    role: m.role,
+    content:
+      typeof m.content === "string"
+        ? m.content
+        : (m.content as ContentBlock[]).map((b) => {
+            if (b.type === "image" && b.source?.type === "base64") {
+              const d = b.source.data;
+              const n = typeof d === "string" ? d.length : 0;
+              return {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: b.source.media_type,
+                  data: `[redacted base64, ${n} chars]`,
+                },
+              };
+            }
+            return b;
+          }),
+  }));
+}
+
+function logFullChatPrompt(params: {
+  requestId: string;
+  turn: number;
+  model: string;
+  system: string | AnthropicSystemBlock[];
+  messages: AnthropicMessage[];
+  tools: unknown[];
+}): void {
+  const { requestId, turn, model, system, messages, tools } = params;
+  const systemChars =
+    typeof system === "string"
+      ? system.length
+      : system.reduce((n, b) => n + (b.text?.length ?? 0), 0);
+  console.info(
+    `[chat][full-prompt] requestId=${requestId} turn=${turn} model=${model} systemChars=${systemChars}`,
+  );
+  console.info(
+    "[chat][full-prompt] Order: tools → system → messages (Anthropic cache prefix hierarchy; matches request body key order).",
+  );
+  console.info("[chat][full-prompt] ----- tools -----");
+  try {
+    console.info(JSON.stringify(tools, null, 2));
+  } catch (e) {
+    console.warn("[chat][full-prompt] tools JSON failed:", e);
+  }
+  console.info("[chat][full-prompt] ----- system -----");
+  if (typeof system === "string") console.info(system);
+  else console.info(JSON.stringify(system, null, 2));
+  console.info("[chat][full-prompt] ----- messages (image base64 redacted) -----");
+  try {
+    console.info(JSON.stringify(redactImageBlocksForLog(messages), null, 2));
+  } catch (e) {
+    console.warn("[chat][full-prompt] messages JSON failed:", e);
+  }
+}
+
+function contentToBlocks(content: string | ContentBlock[]): ContentBlock[] {
+  return typeof content === "string" ? [{ type: "text" as const, text: content }] : content;
+}
+
+/** 动态用户上下文进首条 user（<context>）+ 固定 ack assistant，再接历史与当前 user blocks。 */
+function buildInitialAnthropicMessages(params: {
+  dynamicMarkdown: string;
+  history: AnthropicMessage[];
+  currentUserBlocks: ContentBlock[];
+}): AnthropicMessage[] {
+  const msgs: AnthropicMessage[] = [
+    { role: "user", content: buildChatUserContextEnvelope(params.dynamicMarkdown) },
+    { role: "assistant", content: "Got it, I have your context." },
+    ...params.history,
+  ];
+  const last = msgs[msgs.length - 1];
+  if (last && last.role === "user") {
+    last.content = [...contentToBlocks(last.content), ...params.currentUserBlocks];
+  } else {
+    msgs.push({ role: "user", content: params.currentUserBlocks });
+  }
+  return msgs;
 }
 
 function ensureAlternating(
@@ -133,59 +251,51 @@ const TIME_OF_DAY_HOURS: Record<string, number> = {
   night: 23,
 };
 
+/** Anthropic tool_result for log_symptom (create-only; no record_id). */
+function logSymptomToolResultJson(success: boolean, error?: string): string {
+  if (success) return JSON.stringify({ success: true });
+  return JSON.stringify({ success: false, error: error ?? "failed" });
+}
+
 const LOG_SYMPTOM_TOOL = {
   name: "log_symptom",
   description:
-    "Record a symptom or health observation the user just described. " +
-    "Call this when the user mentions a current symptom, feeling, or health behavior. " +
-    "Do NOT call this for questions, historical analysis, or general conversation.",
+    "Create a new health observation record. Do NOT call for questions, follow-ups, historical analysis, or general chat — only when the user provides NEW health information. This tool cannot modify or delete existing records; if the user asks to fix or remove a past entry, do not call this tool — instead, instruct them to edit it directly in the timeline. See system prompt for call-count rules, keyword rules, optional local_date, and tool result JSON shape.",
   input_schema: {
     type: "object" as const,
     properties: {
       content: {
         type: "string",
-        description: "The symptom description, written naturally in first person",
+        description:
+          "Natural first-person description of the observation. If local_date is a past day vs session App calendar, do NOT leave 昨天/前天/yesterday-style phrases in content — rewrite so the text reads correctly on that day's timeline card (see system prompt).",
       },
       keywords: {
         type: "array",
         items: { type: "string" },
         description:
-          "Symptom/feeling keyword tags ONLY. Rules: " +
-          "1) Only include keywords for actual symptoms or physical/emotional feelings " +
-          "(e.g. 'headache', 'fatigue', 'anxiety', '头痛', '失眠', '焦虑'). " +
-          "2) If the record is about food intake, exercise, medication, or other " +
-          "health behaviors with NO symptom or feeling mentioned, return an empty array []. " +
-          "3) Use short, generic, canonical terms (e.g. 'headache' not 'splitting headache', " +
-          "'头痛' not '头疼得厉害'). Downstream normalization will map variants, " +
-          "but prefer standard terms when possible. " +
-          "4) One keyword per distinct symptom; avoid duplicates or overlapping terms.",
+          "Tags per category: symptom_feeling → 1-2 mid-level tags (body region or symptom class, no invented diagnoses, no vague umbrellas); medication_supplement → drug/supplement names; diet/behavior_treatment → []",
       },
       severity: {
         type: "string",
         enum: ["low", "medium", "high", "positive"],
         description:
-          "Estimated severity based on how the user describes it. " +
-          "Use 'positive' for good states like exercised, slept well, feeling great.",
+          "Estimated severity. 'positive' for good states (exercised, slept well, feeling great).",
       },
       time_of_day: {
         type: "string",
         enum: ["early_morning", "morning", "noon", "afternoon", "evening", "night", "now"],
-        description:
-          "When the symptom occurred based on the user's description. " +
-          "early_morning=凌晨(~4am), morning=早上/上午(~9am), noon=中午(~12pm), " +
-          "afternoon=下午(~3pm), evening=傍晚/晚上(~8pm), night=深夜(~11pm), " +
-          "now=just now or no time mentioned (uses current time)",
+        description: "When it occurred. 'now' if unspecified.",
       },
       category: {
         type: "string",
         enum: ["symptom_feeling", "diet", "medication_supplement", "behavior_treatment"],
         description:
-          "Category of this record. Choose based on what the user described: " +
-          "'symptom_feeling' — symptoms, feelings, emotions, physical sensations (headache, fatigue, anxiety, 头痛, 失眠). " +
-          "'diet' — food/drink intake (ate pizza, drank coffee, 吃了火锅). " +
-          "'medication_supplement' — medications, supplements, vitamins taken (took ibuprofen, vitamin D, 吃了布洛芬). " +
-          "'behavior_treatment' — exercise, therapy, doctor visits, health behaviors (ran 5km, saw dentist, 做了瑜伽). " +
-          "When in doubt, default to 'symptom_feeling'.",
+          "symptom_feeling: symptoms/feelings/emotions; diet: food/drink; medication_supplement: meds/supplements/vitamins; behavior_treatment: exercise/therapy/doctor visits. Default: symptom_feeling.",
+      },
+      local_date: {
+        type: "string",
+        description:
+          "Optional. YYYY-MM-DD calendar day for this row when the user names a specific day or multi-day logging; see App calendar in context. Omit for today / 刚刚 / 现在 / no date clue.",
       },
     },
     required: ["content", "keywords", "severity", "time_of_day", "category"],
@@ -195,20 +305,14 @@ const LOG_SYMPTOM_TOOL = {
 const FETCH_HEALTH_HISTORY_TOOL = {
   name: "fetch_health_history",
   description:
-    "Retrieve the user's health summaries for a specific time period. " +
-    "Call this when the user asks about past symptoms, trends, patterns, or mentions " +
-    "time frames like 'last month', 'past few months', 'recently', '最近', '上个月'. " +
-    "Do NOT call this for current/today's symptoms — those are already in your context.",
+    "Retrieve the user's health summaries for a past period. Use when the user asks about trends, patterns, historical symptoms, or references timeframes like 'last month' or 'recently'. Choose the shortest period that covers the question. Do NOT call for current/today's symptoms — those are already in context.",
   input_schema: {
     type: "object" as const,
     properties: {
       period: {
         type: "string",
         enum: ["monthly", "quarterly", "biannual"],
-        description:
-          "Which summary period to retrieve: " +
-          "'monthly' = past month, 'quarterly' = past 3 months, 'biannual' = past 6 months. " +
-          "Choose the shortest period that covers the user's question.",
+        description: "Shortest period covering the user's question.",
       },
     },
     required: ["period"],
@@ -218,10 +322,7 @@ const FETCH_HEALTH_HISTORY_TOOL = {
 const LIST_DOCUMENTS_TOOL = {
   name: "list_documents",
   description:
-    "List the user's uploaded medical documents (lab reports, prescriptions, checkup results, etc.) " +
-    "with their titles and upload dates. Call this when the user mentions their medical documents, " +
-    "test results, prescriptions, checkups, '体检', '化验', '报告', '处方'. " +
-    "Returns a list of document names and dates — use fetch_document_detail to get the full content.",
+    "List the user's uploaded medical documents including lab reports, prescriptions, checkup results, and imaging reports. Returns document titles, upload dates, and record_ids. Call this first when the user mentions their medical records, test results, or checkups — then use fetch_document_detail with the relevant record_id to get full content.",
   input_schema: {
     type: "object" as const,
     properties: {},
@@ -231,24 +332,41 @@ const LIST_DOCUMENTS_TOOL = {
 const FETCH_DOCUMENT_DETAIL_TOOL = {
   name: "fetch_document_detail",
   description:
-    "Retrieve the AI-generated summary of a specific medical document by its record_id. " +
-    "Call this after list_documents to get details about a document the user is asking about.",
+    "Retrieve the AI-generated summary of a specific medical document by its record_id. Always call list_documents first to obtain available record_ids, then call this tool with the relevant record_id to get the full parsed content of that document.",
   input_schema: {
     type: "object" as const,
     properties: {
       record_id: {
         type: "string",
-        description: "The record_id of the document to retrieve (from list_documents results)",
+        description: "record_id from list_documents results",
       },
     },
     required: ["record_id"],
   },
 };
 
+const CHAT_ANTHROPIC_TOOLS = [
+  LOG_SYMPTOM_TOOL,
+  FETCH_HEALTH_HISTORY_TOOL,
+  LIST_DOCUMENTS_TOOL,
+  FETCH_DOCUMENT_DETAIL_TOOL,
+];
+
+/** Anthropic：仅在最后一个 tool 上设 cache_control（与单块 system 形成稳定可缓存前缀）。 */
+function getChatAnthropicToolsWithCache(): AnthropicToolJson[] {
+  const n = CHAT_ANTHROPIC_TOOLS.length;
+  return CHAT_ANTHROPIC_TOOLS.map((tool, i) =>
+    i === n - 1
+      ? { ...tool, cache_control: { type: "ephemeral" as const, ttl: "5m" as const } }
+      : { ...tool },
+  );
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-nvapp-mock-tier",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, x-nvapp-mock-tier, x-nvapp-log-full-prompt",
 };
 
 // ── Route ────────────────────────────────────────────────────────
@@ -424,6 +542,7 @@ export async function POST(request: Request) {
 
   // ── Build context strings ─────────────────────────────────────
   const baseContext = buildBaseContext({
+    sessionLocalDate: dateStr,
     profile: ctx.profile,
     riskFlags: ctx.riskFlags,
     thisWeekLogs: ctx.thisWeekLogs,
@@ -525,23 +644,9 @@ export async function POST(request: Request) {
   }
 
   // ── Build message history for Anthropic ───────────────────────
-  const historyMessages = ensureAlternating(ctx.recentHistory);
-
-  const buildMessages = (extraUserContent: ContentBlock[]): AnthropicMessage[] => {
-    const msgs: AnthropicMessage[] = [...historyMessages];
-    const last = msgs[msgs.length - 1];
-    if (last && last.role === "user") {
-      last.content = [
-        ...(typeof last.content === "string"
-          ? [{ type: "text" as const, text: last.content }]
-          : (last.content as ContentBlock[])),
-        ...extraUserContent,
-      ];
-    } else {
-      msgs.push({ role: "user", content: extraUserContent });
-    }
-    return msgs;
-  };
+  const historyMessages = ensureAlternating(
+    ctx.recentHistory.map(({ role, content }) => ({ role, content })),
+  );
 
   // ── Routing: decide Layer1 vs Layer2 before calling ────────────
   let reply = "";
@@ -562,29 +667,102 @@ export async function POST(request: Request) {
   if (useLayer2) deepAnalysis = true;
 
   const selectedModel = useLayer2 ? LAYER2_MODEL : LAYER1_MODEL;
-  const selectedContext = useLayer2
-    ? buildSystemPrompt(buildFullContext(baseContext, {
+  const dynamicUserContextMarkdown = useLayer2
+    ? buildFullContext(baseContext, {
         monthlySummary: ctx.summaryMap["monthly"] ?? null,
         quarterlySummary: ctx.summaryMap["quarterly"] ?? null,
         biannualSummary: ctx.summaryMap["biannual"] ?? null,
         docsSummary: ctx.docsSummary,
-      }))
-    : buildSystemPrompt(baseContext);
+      })
+    : baseContext;
+  const selectedSystemForApi = getAnthropicChatStaticSystem();
+  const cachedToolsForApi = getChatAnthropicToolsWithCache();
   const selectedMaxTokens = useLayer2 ? 2048 : 1024;
 
   try {
-    let currentMessages = buildMessages(userContentBlocks);
+    let currentMessages = buildInitialAnthropicMessages({
+      dynamicMarkdown: dynamicUserContextMarkdown,
+      history: historyMessages,
+      currentUserBlocks: userContentBlocks,
+    });
     let maxTurns = 5;
+    let chatLlmTurn = 0;
+    const logFullPrompt = shouldLogFullChatPrompt(request);
 
     const llmStart = Date.now();
     while (maxTurns-- > 0) {
+      chatLlmTurn += 1;
+      if (logFullPrompt) {
+        logFullChatPrompt({
+          requestId,
+          turn: chatLlmTurn,
+          model: selectedModel,
+          system: selectedSystemForApi,
+          messages: currentMessages,
+          tools: cachedToolsForApi,
+        });
+      }
       const resp = await callAnthropic({
         model: selectedModel,
-        system: selectedContext,
+        system: selectedSystemForApi,
         messages: currentMessages,
-        tools: [LOG_SYMPTOM_TOOL, FETCH_HEALTH_HISTORY_TOOL, LIST_DOCUMENTS_TOOL, FETCH_DOCUMENT_DETAIL_TOOL],
+        tools: cachedToolsForApi,
         max_tokens: selectedMaxTokens,
         ...(useLayer2 ? { temperature: 0 } : {}),
+      });
+
+      const usageTok = tokensFromAnthropicUsage(resp.usage);
+      const cacheCreate = resp.usage?.cache_creation_input_tokens;
+      const cacheRead = resp.usage?.cache_read_input_tokens;
+      const cacheCreate5m = (resp.usage as { cache_creation?: { ephemeral_5m_input_tokens?: number } } | undefined)
+        ?.cache_creation?.ephemeral_5m_input_tokens;
+      const cacheCreate1h = (resp.usage as { cache_creation?: { ephemeral_1h_input_tokens?: number } } | undefined)
+        ?.cache_creation?.ephemeral_1h_input_tokens;
+      console.info(
+        "[chat][anthropic-usage]",
+        JSON.stringify({
+          requestId,
+          turn: chatLlmTurn,
+          model: selectedModel,
+          layer: useLayer2 ? "layer2" : "layer1",
+          usage: resp.usage ?? null,
+        }),
+      );
+      console.info(
+        "[chat][anthropic-cache]",
+        JSON.stringify({
+          requestId,
+          turn: chatLlmTurn,
+          cache_creation_input_tokens: cacheCreate ?? 0,
+          cache_read_input_tokens: cacheRead ?? 0,
+          ephemeral_5m_input_tokens: cacheCreate5m ?? 0,
+          ephemeral_1h_input_tokens: cacheCreate1h ?? 0,
+          note:
+            (cacheRead ?? 0) > 0
+              ? "cache_read>0: stable prefix likely hit"
+              : (cacheCreate ?? 0) > 0
+                ? "cache_creation>0: new or refreshed cache write"
+                : "both zero: prefix too short or cache_control mismatch (Haiku needs ~4096+ tokens with tools)",
+        }),
+      );
+      void recordAiUsage({
+        userId,
+        feature: AI_USAGE_FEATURES.chat,
+        provider: "anthropic",
+        model: selectedModel,
+        inputTokens: usageTok.inputTokens,
+        outputTokens: usageTok.outputTokens,
+        metadata: {
+          requestId,
+          deepAnalysis: useLayer2,
+          turn: chatLlmTurn,
+          stopReason: resp.stop_reason,
+          layer: useLayer2 ? "layer2" : "layer1",
+          ...(cacheCreate != null && cacheCreate > 0
+            ? { cache_creation_input_tokens: cacheCreate }
+            : {}),
+          ...(cacheRead != null && cacheRead > 0 ? { cache_read_input_tokens: cacheRead } : {}),
+        },
       });
 
       console.log(`[chat] ${useLayer2 ? "layer2" : "layer1"} response:`, JSON.stringify({
@@ -616,63 +794,93 @@ export async function POST(request: Request) {
               severity?: string;
               time_of_day?: string;
               category?: string;
+              local_date?: string;
             };
             const summary =
               typeof input.content === "string" && input.content.trim()
                 ? input.content.trim()
                 : null;
 
-            if (summary) {
-              const validCategories = ["symptom_feeling", "diet", "medication_supplement", "behavior_treatment"];
-              const category = validCategories.includes(input.category ?? "")
-                ? input.category!
-                : "symptom_feeling";
-
-              const needsKeywords = category === "symptom_feeling" || category === "medication_supplement";
-              const rawKeywords = needsKeywords && Array.isArray(input.keywords)
-                ? input.keywords.filter((k) => typeof k === "string" && k.trim()).map((k) => k.trim())
-                : [];
-              const keywords = rawKeywords.length > 0 && category === "symptom_feeling"
-                ? normalizeKeywords(rawKeywords)
-                : rawKeywords;
-              const severity =
-                input.severity === "low" || input.severity === "medium" || input.severity === "high" || input.severity === "positive"
-                  ? input.severity
-                  : null;
-              const meta: Record<string, unknown> = {};
-              if (keywords.length > 0) meta.symptom_keywords = keywords;
-
-              const tod = typeof input.time_of_day === "string" ? input.time_of_day : "now";
-              let createdAt: string | undefined;
-              if (tod !== "now" && tod in TIME_OF_DAY_HOURS) {
-                const hour = TIME_OF_DAY_HOURS[tod];
-                createdAt = `${dateStr}T${String(hour).padStart(2, "0")}:00:00+08:00`;
-                if (input.time_of_day) meta.time_of_day = input.time_of_day;
-              }
-
-              const insertPayload: Record<string, unknown> = {
-                user_id: userId,
-                local_date: dateStr,
-                summary,
-                tags: keywords,
-                severity,
-                category,
-                source_message_id: sourceMessageId,
-                meta,
-              };
-              if (createdAt) insertPayload.created_at = createdAt;
-
-              const { error: logErr } = await supabaseAdmin
-                .from("symptom_summaries")
-                .insert(insertPayload);
-              if (!logErr) dailyLogUpdated = true;
-              else console.error("symptom_summaries insert:", logErr);
+            if (!summary) {
+              toolResults.push({
+                type: "tool_result",
+                tool_use_id: tb.id,
+                content: logSymptomToolResultJson(false, "missing or empty content"),
+              });
+              continue;
             }
 
+            const validCategories = ["symptom_feeling", "diet", "medication_supplement", "behavior_treatment"];
+            const category = validCategories.includes(input.category ?? "")
+              ? input.category!
+              : "symptom_feeling";
+
+            const needsKeywords = category === "symptom_feeling" || category === "medication_supplement";
+            const rawKeywords = needsKeywords && Array.isArray(input.keywords)
+              ? input.keywords.filter((k) => typeof k === "string" && k.trim()).map((k) => k.trim())
+              : [];
+            const userTextForKeywords = text !== "(空)" ? text : summary;
+            const keywords =
+              rawKeywords.length > 0 && category === "symptom_feeling"
+                ? normalizeSymptomKeywordsForUserText(userTextForKeywords, rawKeywords)
+                : rawKeywords;
+            const severity =
+              input.severity === "low" || input.severity === "medium" || input.severity === "high" || input.severity === "positive"
+                ? input.severity
+                : null;
+            const meta: Record<string, unknown> = {};
+            if (keywords.length > 0) meta.symptom_keywords = keywords;
+
+            const rawLd =
+              typeof input.local_date === "string" ? input.local_date.trim() : "";
+            const parsedLd = /^\d{4}-\d{2}-\d{2}$/.test(rawLd) ? rawLd : dateStr;
+            const logLocalDate = parsedLd > dateStr ? dateStr : parsedLd;
+
+            const tod = typeof input.time_of_day === "string" ? input.time_of_day : "now";
+            let createdAt: string | undefined;
+            if (tod !== "now" && tod in TIME_OF_DAY_HOURS) {
+              const hour = TIME_OF_DAY_HOURS[tod];
+              createdAt = `${logLocalDate}T${String(hour).padStart(2, "0")}:00:00+08:00`;
+              if (input.time_of_day) meta.time_of_day = input.time_of_day;
+            }
+
+            const rowPayload: Record<string, unknown> = {
+              local_date: logLocalDate,
+              summary,
+              tags: keywords,
+              severity,
+              category,
+              source_message_id: sourceMessageId,
+              meta,
+            };
+            if (createdAt) rowPayload.created_at = createdAt;
+
+            const insertPayload: Record<string, unknown> = {
+              user_id: userId,
+              ...rowPayload,
+            };
+
+            const { data: inserted, error: logErr } = await supabaseAdmin
+              .from("symptom_summaries")
+              .insert(insertPayload)
+              .select("id")
+              .maybeSingle();
+
+            if (logErr || !inserted?.id) {
+              if (logErr) console.error("symptom_summaries insert:", logErr);
+              toolResults.push({
+                type: "tool_result",
+                tool_use_id: tb.id,
+                content: logSymptomToolResultJson(false, "insert failed"),
+              });
+              continue;
+            }
+
+            dailyLogUpdated = true;
             toolResults.push({
               type: "tool_result",
               tool_use_id: tb.id,
-              content: summary ? "已成功记录。" : "参数无效，未记录。",
+              content: logSymptomToolResultJson(true),
             });
             continue;
           }
@@ -818,7 +1026,6 @@ export async function POST(request: Request) {
   const insertAssistantStart = Date.now();
   const assistantMeta: Record<string, unknown> = {};
   if (deepAnalysis) assistantMeta.deepAnalysis = true;
-
   await supabaseAdmin.from("chat_messages").insert({
     user_id: userId,
     role: "assistant",

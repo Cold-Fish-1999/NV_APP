@@ -8,6 +8,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const DOC_READY_STATUSES = ["ready", "completed"] as const;
 
+/** OpenAI 文本聚合 / 摘要更新（与 profile 资料分析对齐） */
+const DOCUMENT_CONTEXT_TEXT_MODEL = "gpt-4o";
+
 function parseAiJson(raw: string): { docs_summary?: string | null; risk_flags?: string[] } {
   const cleaned = raw.replace(/```json|```/g, "").trim();
   try {
@@ -74,7 +77,7 @@ async function refreshDocumentContextWithClient(
     uploaded_at: d.created_at as string,
   }));
 
-  const model = docs.length > 3 ? "gpt-4o" : "gpt-4o-mini";
+  const model = DOCUMENT_CONTEXT_TEXT_MODEL;
 
   const prompt = `
 You are a medical document analyst. Below are AI-generated summaries of a user's health documents.
@@ -179,7 +182,7 @@ Respond ONLY with valid JSON, no preamble, no markdown:
       Authorization: `Bearer ${openaiApiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: DOCUMENT_CONTEXT_TEXT_MODEL,
       max_tokens: 400,
       messages: [{ role: "user", content: prompt }],
     }),
@@ -197,7 +200,7 @@ Respond ONLY with valid JSON, no preamble, no markdown:
       docs_summary: parsed.docs_summary ?? (existing.docs_summary as string),
       docs_items: updatedItems,
       risk_flags: parsed.risk_flags ?? (existing.risk_flags as string[]) ?? [],
-      generated_by_model: "gpt-4o-mini",
+      generated_by_model: DOCUMENT_CONTEXT_TEXT_MODEL,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "user_id" }

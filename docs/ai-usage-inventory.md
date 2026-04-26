@@ -28,14 +28,14 @@
 
 | 能力 | HTTP | 实现文件 | API 类型 | 模型（代码常量 / 环境变量） | 触发方式 |
 |------|------|-----------|----------|------------------------------|----------|
-| **聊天** | `POST /api/chat` | [`apps/server/app/api/chat/route.ts`](apps/server/app/api/chat/route.ts) | Anthropic Messages API | **Layer1**：`claude-haiku-4-5-20251001`；**Layer2**：`claude-sonnet-4-6`。由 `analyzeDeepAnalysisNeed` 决定是否升级 Layer2（`deepAnalysis`）。 | [`sendChatMessage`](apps/mobile/lib/api.ts)；首页 Chat UI。 |
+| **聊天** | `POST /api/chat` | [`apps/server/app/api/chat/route.ts`](apps/server/app/api/chat/route.ts) | Anthropic Messages API | **Layer1**：`claude-haiku-4-5-20251001`；**Layer2**：`claude-sonnet-4-6`。由 `analyzeDeepAnalysisNeed` 决定是否升级 Layer2（`deepAnalysis`）。**计量**：tool 循环内每轮 `callAnthropic` 成功后写入 `ai_usage_events`（`feature: chat`）。 | [`sendChatMessage`](apps/mobile/lib/api.ts)；首页 Chat UI。 |
 | **语音转写** | `POST /api/transcribe` | [`apps/server/app/api/transcribe/route.ts`](apps/server/app/api/transcribe/route.ts) | OpenAI Audio Transcriptions | `whisper-1` 或 `gpt-4o-mini-transcribe`（由表单字段 `model` 决定，移动端默认传 `gpt-4o-mini-transcribe`）。 | [`transcribeAudio`](apps/mobile/lib/api.ts)；日历 Add Health Record 录音。 |
-| **资料上传 AI 分析** | `POST /api/profile-document-analyze` | [`apps/server/app/api/profile-document-analyze/route.ts`](apps/server/app/api/profile-document-analyze/route.ts) | OpenAI Chat Completions（含多模态图片 `image_url` / data URL） | 环境变量 **`PROFILE_DOC_MODEL`**，默认 **`gpt-5`**（见 `getProfileDocModel()`）。 | [`analyzeProfileDocumentUploads`](apps/mobile/lib/api.ts)；Documents / Profile 上传成功后异步调用。 |
+| **资料上传 AI 分析** | `POST /api/profile-document-analyze` | [`apps/server/app/api/profile-document-analyze/route.ts`](apps/server/app/api/profile-document-analyze/route.ts) | OpenAI Chat Completions（含多模态图片 `image_url` / data URL） | 环境变量 **`PROFILE_DOC_MODEL`**，默认 **`gpt-4o`**（见 `getProfileDocModel()`）。 | [`analyzeProfileDocumentUploads`](apps/mobile/lib/api.ts)；Documents / Profile 上传成功后异步调用。 |
 | **症状关键词 + 严重度（元数据）** | `POST /api/health-record-meta` | [`apps/server/app/api/health-record-meta/route.ts`](apps/server/app/api/health-record-meta/route.ts) | Anthropic Messages（**无** tools / 聊天历史 / `chatContext`） | **`claude-haiku-4-5-20251001`**；用户消息仅为记录正文。 | [`generateSymptomMeta`](apps/mobile/lib/api.ts)；Pro 用户在 [`AddSymptomFab`](apps/mobile/components/calendar/AddSymptomFab.tsx) 提交手动记录时。 |
 
 ### 2.1 提示词与上下文（聊天）
 
-- **System prompt**：[`buildSystemPrompt`](apps/server/lib/chatContext.ts)、[`buildBaseContext`](apps/server/lib/chatContext.ts)、[`buildFullContext`](apps/server/lib/chatContext.ts)（Layer2 时合并更长周期摘要与文档摘要）。
+- **System prompt**：[`buildAnthropicSystemWithCache`](apps/server/lib/chatContext.ts)（静态段 `cache_control` + 动态 context）、[`buildBaseContext`](apps/server/lib/chatContext.ts)、[`buildFullContext`](apps/server/lib/chatContext.ts)（Layer2 时合并更长周期摘要与文档摘要）；工具列表在最后一项带 `cache_control` 以配合 Anthropic prompt caching。
 - **Tools**（Anthropic tool 定义）：`log_symptom`、`fetch_health_history`、`list_documents`、`fetch_document_detail` 等，见 [`chat/route.ts`](apps/server/app/api/chat/route.ts) 内常量（如 `LOG_SYMPTOM_TOOL`）。
 - **执行逻辑**：多轮循环（`maxTurns` 约 5），处理 `tool_use` / `tool_result`；症状关键词在 `symptom_feeling` 类目下会经 [`normalizeKeywords`](apps/server/lib/symptomTaxonomy.ts) **本地**归一化（非 API）。
 
@@ -55,8 +55,8 @@
 
 | 能力 | 实现 | API | 模型 | 触发 |
 |------|------|-----|------|------|
-| **文档上下文 · 全量聚合** | `refreshDocumentContextWithClient` in [`apps/server/lib/documentContext.ts`](apps/server/lib/documentContext.ts) | OpenAI `POST /v1/chat/completions` | 文档条数 **> 3** → **`gpt-4o`**；否则 **`gpt-4o-mini`** | `process-document-queue` 成功处理 `document_context` job；或全量刷新入口调用 `refreshDocumentContext`。 |
-| **文档上下文 · 增量** | `incrementalRefreshDocumentContextWithClient` 同上文件 | OpenAI Chat Completions | 固定 **`gpt-4o-mini`** | [`profile-document-analyze`](apps/server/app/api/profile-document-analyze/route.ts) 在单条分析成功后调用。 |
+| **文档上下文 · 全量聚合** | `refreshDocumentContextWithClient` in [`apps/server/lib/documentContext.ts`](apps/server/lib/documentContext.ts) | OpenAI `POST /v1/chat/completions` | 固定 **`gpt-4o`** | `process-document-queue` 成功处理 `document_context` job；或全量刷新入口调用 `refreshDocumentContext`。 |
+| **文档上下文 · 增量** | `incrementalRefreshDocumentContextWithClient` 同上文件 | OpenAI Chat Completions | 固定 **`gpt-4o`** | [`profile-document-analyze`](apps/server/app/api/profile-document-analyze/route.ts) 在单条分析成功后调用。 |
 | **Prompt 形态** | 同文件内模板字符串 | — | 要求输出 JSON：`docs_summary`、`risk_flags`（全量与增量两套 prompt）。 | — |
 
 **队列说明**：[`supabase/functions/process-document-queue/index.ts`](supabase/functions/process-document-queue/index.ts) 消费 `summary_generation_queue` 中 `level = document_context` 的任务，调用共享逻辑（见下节 Edge 版 `_shared/documentContext.ts`）。
@@ -74,7 +74,7 @@
 | [`backfill-summaries`](supabase/functions/backfill-summaries/index.ts) | 同上 | `backfill_*` → 多为 **`gpt-4o-mini`** | 历史摘要回填。 |
 | [`generate-weekly-report`](supabase/functions/generate-weekly-report/index.ts) | Anthropic Messages；[`_shared/normalizeKeywords.ts`](supabase/functions/_shared/normalizeKeywords.ts) | 正文 **`claude-sonnet-4-6`**；关键词批处理 **`claude-haiku-4-5-20251001`** | 周报 HTML/内容生成（含关键词规范化）。 |
 | [`generate-monthly-report`](supabase/functions/generate-monthly-report/index.ts) | 同上 | 同上 | 月报。 |
-| [`process-document-queue`](supabase/functions/process-document-queue/index.ts) | [`_shared/documentContext.ts`](supabase/functions/_shared/documentContext.ts) | OpenAI：`gpt-4o` / `gpt-4o-mini`（与 server 版同源策略） | 异步重建 `user_document_context`。 |
+| [`process-document-queue`](supabase/functions/process-document-queue/index.ts) | [`_shared/documentContext.ts`](supabase/functions/_shared/documentContext.ts) | OpenAI：固定 **`gpt-4o`**（与 server 版对齐） | 异步重建 `user_document_context`。 |
 
 ### 4.1 共享：`summaryAi.ts`
 
@@ -112,3 +112,4 @@
 
 - 新增 API 或 Edge Function 时，请同步更新本文件。
 - 模型名以代码与环境变量为准；默认模型可能随部署变更。
+- **Token 计量分阶段实现计划**（Next 服务端、`ai_usage_events`、按路由落地顺序）：见 [ai-token-metering-plan.md](./ai-token-metering-plan.md)。

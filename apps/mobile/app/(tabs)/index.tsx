@@ -46,6 +46,7 @@ import { supabase } from "@/lib/supabase";
 import { sendChatMessage, fetchChatMessages, transcribeAudio } from "@/lib/api";
 import { filterRecent24h, loadChatCache, saveChatCache, clearChatCache } from "@/lib/chatCache";
 import { CLIENT_UPLOAD_MAX_EDGE, MAX_CHAT_IMAGES_PER_MESSAGE } from "@/lib/docUploadLimits";
+import { FLOATING_TAB_H } from "./_layout";
 
 type Message = {
   id: string;
@@ -93,13 +94,11 @@ function isToday(iso: string): boolean {
   return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
 }
 
-const FLOAT_TAB_H = 52;
-
 export default function ChatScreen() {
   const router = useRouter();
   const headerH = useHeaderHeight();
   const insets = useSafeAreaInsets();
-  const tabClearance = (insets.bottom > 0 ? insets.bottom - 12 : 12) + FLOAT_TAB_H;
+  const tabClearance = (insets.bottom > 0 ? insets.bottom - 12 : 12) + FLOATING_TAB_H;
   const { session } = useAuth();
   const { status } = useSubscription();
   const isFree = status?.tier === "free";
@@ -120,17 +119,27 @@ export default function ChatScreen() {
   const [uploadingImages, setUploadingImages] = useState(false);
   const [deepThinking, setDeepThinking] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const lastUserIdRef = useRef<string | null>(null);
   const flatListRef = useRef<FlatListType<Message>>(null);
   const deepThinkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const sub = Keyboard.addListener("keyboardDidShow", () => {
+    const onShow = () => {
+      setKeyboardOpen(true);
       requestAnimationFrame(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
       });
-    });
-    return () => sub.remove();
+    };
+    const onHide = () => setKeyboardOpen(false);
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const subShow = Keyboard.addListener(showEvt, onShow);
+    const subHide = Keyboard.addListener(hideEvt, onHide);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
   }, []);
 
   const showHoldToTalk =
@@ -142,6 +151,7 @@ export default function ChatScreen() {
   );
 
   const toggleMessageTime = useCallback((id: string) => {
+    Keyboard.dismiss();
     setShowTimeForIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -673,6 +683,12 @@ export default function ChatScreen() {
   );
 
   const inputPadBottom = tabClearance + 20;
+  /** 键盘弹出时 Tab 被挡住，不应再预留整块 Tab 空隙，否则与 KeyboardAvoidingView 叠加导致输入框跳得过高 */
+  const inputBoxMarginBottom = keyboardOpen
+    ? Math.max(insets.bottom, 8)
+    : inputPadBottom;
+  const listPaddingBottom =
+    (keyboardOpen ? Math.max(insets.bottom, 8) + 112 : inputPadBottom) + 100;
 
   return (
     <View style={styles.container}>
@@ -681,9 +697,14 @@ export default function ChatScreen() {
         data={messages}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={[styles.list, { paddingTop: headerH, paddingBottom: inputPadBottom + 100 }, messages.length === 0 && styles.listEmpty]}
+        contentContainerStyle={[
+          styles.list,
+          { paddingTop: headerH, paddingBottom: listPaddingBottom },
+          messages.length === 0 && styles.listEmpty,
+        ]}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={() => Keyboard.dismiss()}
         ListEmptyComponent={
           !loadingHistory ? (
             <View style={styles.emptyState}>
@@ -708,7 +729,7 @@ export default function ChatScreen() {
         keyboardVerticalOffset={0}
         pointerEvents="box-none"
       >
-        <View style={[styles.inputBox, { marginBottom: inputPadBottom }]}>
+        <View style={[styles.inputBox, { marginBottom: inputBoxMarginBottom }]}>
           <BlurView intensity={40} tint="systemChromeMaterialLight" style={StyleSheet.absoluteFill} />
           <View style={styles.inputGlassShine} pointerEvents="none" />
           <View style={styles.inputGlassEdge} pointerEvents="none" />

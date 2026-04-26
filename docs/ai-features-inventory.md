@@ -190,7 +190,7 @@ Description: "${description}"
 |---|---|
 | 代码入口 | `apps/server/app/api/profile-document-analyze/route.ts` |
 | 前端调用 | `apps/mobile/lib/api.ts` → `analyzeProfileDocumentUploads()` → `POST /api/profile-document-analyze` |
-| 模型 | `gpt-5`（可由 `PROFILE_DOC_MODEL` 环境变量覆盖） |
+| 模型 | `gpt-4o`（可由 `PROFILE_DOC_MODEL` 环境变量覆盖） |
 | maxDuration | 120s（Next.js API route） |
 
 ### 触发逻辑
@@ -231,8 +231,8 @@ ${userRemark}
 |---|---|
 | 代码入口（Server） | `apps/server/lib/documentContext.ts` |
 | 代码入口（Edge） | `supabase/functions/_shared/documentContext.ts` |
-| 全量模型 | 文档数 > 3 → `gpt-4o`，否则 `gpt-4o-mini` |
-| 增量模型 | `gpt-4o-mini` |
+| 全量模型 | `gpt-4o` |
+| 增量模型 | `gpt-4o` |
 
 ### 触发逻辑
 
@@ -618,6 +618,6 @@ Monthly summary...
 |---|---|
 | `OPENAI_API_KEY` | 转写 / 文档分析 / 摘要生成 / 文档上下文聚合 |
 | `ANTHROPIC_API_KEY` | 聊天 / 周报 / 月报 / 关键词标准化 |
-| `PROFILE_DOC_MODEL` | 文档分析模型（默认 `gpt-5`） |
+| `PROFILE_DOC_MODEL` | 文档分析模型（默认 `gpt-4o`） |
 | `SUPABASE_URL` | Edge Functions 数据库连接 |
 | `SUPABASE_SERVICE_ROLE_KEY` | Edge Functions 管理员权限 |

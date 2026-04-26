@@ -6,6 +6,9 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.3
 
 const DOC_READY_STATUSES = ["ready", "completed"] as const;
 
+/** OpenAI 文本聚合（与 apps/server/lib/documentContext.ts 对齐） */
+const DOCUMENT_CONTEXT_TEXT_MODEL = "gpt-4o";
+
 function parseAiJson(raw: string): { docs_summary?: string | null; risk_flags?: string[] } {
   const cleaned = raw.replace(/```json|```/g, "").trim();
   try {
@@ -63,7 +66,7 @@ export async function refreshDocumentContext(
     uploaded_at: d.created_at as string,
   }));
 
-  const model = docs.length > 3 ? "gpt-4o" : "gpt-4o-mini";
+  const model = DOCUMENT_CONTEXT_TEXT_MODEL;
 
   const prompt = `
 You are a medical document analyst. Below are AI-generated summaries of a user's health documents.

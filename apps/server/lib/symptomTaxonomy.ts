@@ -44,10 +44,14 @@ export const ZH_TAXONOMY: Record<string, string[]> = {
   '胸闷': ['胸痛', '胸口发闷', '胸部压迫感', '胸部不适', '胸口紧绷', '胸口痛','胸闷'],
   '气短': ['呼吸困难', '气喘', '喘不上气', '呼吸急促', '上气不接下气', '喘气费力','气短'],
 
-  // 消化
+  // 消化 — 腹部/肠胃笼统不适 与 明确胃部 分开（不要把「肚子/腹部」笼统表述归一成胃痛）
   '恶心': ['想吐', '胃部不适', '反胃', '作呕', '想呕吐','恶心'],
   '呕吐': ['吐了', '吐','呕吐'],
-  '胃痛': ['腹痛', '肚子痛', '胃部疼痛', '胃痉挛', '腹部不适','胃痛'],
+  '腹部不适': [
+    '腹部不适', '肚子不适', '肠胃不适', '肚子疼', '肚子痛', '腹痛', '小腹不适',
+    '肚子不舒服', '腹部不舒服', '肚子闹腾', '肚子一直不好', '肠胃不好', '消化不好',
+  ],
+  '胃痛': ['胃痛', '胃疼', '胃部疼痛', '胃痉挛', '胃部绞痛'],
   '腹胀': ['胀气', '肚子胀', '肠胃胀气','腹胀'],
   '腹泻': ['拉肚子', '稀便', '腹泻不止', '消化不良','腹泻'],
   '便秘': ['排便困难', '大便干燥', '便秘问题','便秘'],
@@ -200,10 +204,16 @@ export const EN_TAXONOMY: Record<string, string[]> = {
     'nausea',
   ],
   vomiting: ['vomited', 'threw up', 'throwing up', 'puking','vomiting'],
+  abdominal_discomfort: [
+    'abdominal discomfort', 'abdominal pain', 'belly pain', 'belly ache', 'belly issues',
+    'tummy ache', 'tummy trouble', 'abdominal cramps', 'gut pain', 'gi discomfort',
+    'digestive discomfort', 'my belly has been off', 'upset belly',
+    'abdominal discomfort',
+  ],
   stomach_pain: [
-    'abdominal pain', 'stomach ache', 'stomachache', 'belly pain',
-    'tummy ache', 'abdominal cramps', 'stomach cramps', 'gut pain',
-    'stomach pain',
+    'stomach ache', 'stomachache', 'stomach cramps', 'stomach pain',
+    'gastric pain', 'pain in my stomach', 'pain in the stomach', 'stomach hurts',
+    'stomach_pain',
   ],
   bloating: ['bloated', 'gassy', 'gas', 'flatulence', 'distended stomach','bloating'],
   diarrhea: [
@@ -365,9 +375,14 @@ export const ES_TAXONOMY: Record<string, string[]> = {
     'revuelto el estómago',
   ],
   vómito: ['vomitar', 'náuseas con vómito', 'devolver'],
+  malestar_abdominal: [
+    'dolor abdominal', 'cólicos', 'calambres abdominales', 'dolor de panza',
+    'malestar abdominal', 'malestar digestivo', 'panza delicada',
+    'malestar_abdominal',
+  ],
   dolor_de_estómago: [
-    'dolor abdominal', 'cólicos', 'malestar gástrico',
-    'calambres abdominales', 'dolor de panza',
+    'dolor de estómago', 'dolor gástrico', 'malestar gástrico', 'punzadas en el estómago',
+    'dolor_de_estómago',
   ],
   hinchazón: ['gases', 'distensión abdominal', 'flatulencia', 'abdomen inflado'],
   diarrea: ['heces blandas', 'deposiciones frecuentes', 'suelto del estómago'],
@@ -471,4 +486,51 @@ export function normalizeKeyword(raw: string): string {
 export function normalizeKeywords(rawKeywords: string[]): string[] {
   const normalized = rawKeywords.map(normalizeKeyword)
   return [...new Set(normalized)]
+}
+
+/** 用户原文是否明确指向「胃」器官（不含仅「肠胃」连用时的泛化消化表述） */
+export function textSuggestsExplicitStomachOrganZH(userText: string): boolean {
+  if (/胃痛|胃疼/.test(userText)) return true
+  const t = userText.replace(/肠胃/g, '')
+  return /[胃脘]/.test(t)
+}
+
+function textSuggestsExplicitStomachOrganEN(userText: string): boolean {
+  return /\b(stomach|gastric)\b/i.test(userText)
+}
+
+function textSuggestsExplicitStomachOrganES(userText: string): boolean {
+  return /\best[oó]mago\b|gástric/i.test(userText)
+}
+
+function adjustKeywordForUserContext(userText: string, keyword: string): string {
+  const lang = detectLang(keyword)
+  if (lang === 'zh') {
+    if (keyword === '胃痛' && !textSuggestsExplicitStomachOrganZH(userText)) return '腹部不适'
+    return keyword
+  }
+  if (lang === 'en') {
+    if (keyword === 'stomach_pain' && !textSuggestsExplicitStomachOrganEN(userText)) {
+      return 'abdominal_discomfort'
+    }
+    return keyword
+  }
+  if (lang === 'es') {
+    if (keyword === 'dolor_de_estómago' && !textSuggestsExplicitStomachOrganES(userText)) {
+      return 'malestar_abdominal'
+    }
+    return keyword
+  }
+  return keyword
+}
+
+/**
+ * 词表归一化后，按用户原文收紧「笼统腹部 vs 明确胃部」等，避免模型误标。
+ */
+export function normalizeSymptomKeywordsForUserText(
+  userText: string,
+  rawKeywords: string[],
+): string[] {
+  const normalized = normalizeKeywords(rawKeywords)
+  return [...new Set(normalized.map((k) => adjustKeywordForUserContext(userText, k)))]
 }

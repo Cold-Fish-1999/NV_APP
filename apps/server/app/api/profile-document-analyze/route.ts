@@ -3,6 +3,11 @@ import OpenAI from "openai";
 import sharp from "sharp";
 import mammoth from "mammoth";
 import { supabaseAdmin } from "@/lib/supabase";
+import {
+  AI_USAGE_FEATURES,
+  recordAiUsage,
+  tokensFromOpenAIChatUsage,
+} from "@/lib/aiUsage";
 import { extractPdfText } from "@/lib/pdfText";
 import { incrementalRefreshDocumentContext } from "@/lib/documentContext";
 import { normalizeDocCategory } from "@/lib/docCategory";
@@ -49,7 +54,7 @@ async function imageUrlToJpegDataUrl(url: string): Promise<string> {
 }
 
 function getProfileDocModel() {
-  return (process.env.PROFILE_DOC_MODEL ?? "gpt-5").trim() || "gpt-5";
+  return (process.env.PROFILE_DOC_MODEL ?? "gpt-4o").trim() || "gpt-4o";
 }
 
 function parseOutput(
@@ -334,6 +339,21 @@ export async function POST(request: Request) {
 
     const raw = completion.choices[0]?.message?.content ?? "{}";
     lap(`openai-vision (model=${model})`);
+    const usageTok = tokensFromOpenAIChatUsage(completion.usage);
+    void recordAiUsage({
+      userId,
+      feature: AI_USAGE_FEATURES.profileDocumentAnalyze,
+      provider: "openai",
+      model,
+      inputTokens: usageTok.inputTokens,
+      outputTokens: usageTok.outputTokens,
+      metadata: {
+        record_id: recordId || null,
+        upload_count: orderedRows.length,
+        image_count: imageEntries.length,
+        doc_file_count: docTexts.length,
+      },
+    });
     const parsed = parseOutput(raw, uploadIds);
     const itemMap = new Map(parsed.itemSummaries.map((x) => [x.uploadId, x]));
     for (const row of orderedRows) {

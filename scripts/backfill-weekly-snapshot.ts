@@ -79,6 +79,10 @@ function computeStats(rows: SymptomRow[]) {
   return { log_count: rows.length, top_tags: topTags, tag_frequency: tagFreq, avg_severity: avgLabel, trend: "stable" as const };
 }
 
+/** Keep in sync with `supabase/functions/_shared/summaryAi.ts` → `SUMMARY_STYLE_RULES`. */
+const SUMMARY_STYLE_RULES =
+  'Prioritize information density. Cover: (1) time anchor, (2) notable behaviors/supplements/activities, (3) symptom status (positive or negative trends), (4) overall pattern. Avoid restating the same point in different words. Do not use filler openers or closers such as "Overall", "In summary", or "In conclusion".';
+
 async function callOpenAI(systemPrompt: string, userContent: string, maxTokens: number): Promise<string> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -175,10 +179,10 @@ async function main() {
 
     const content = rows.map((r) => `[${r.local_date}] (severity: ${r.severity ?? "n/a"}) ${r.summary}`).join("\n");
 
-    const prompt = "You are a health analyst. Write a concise summary of the user's symptoms and health patterns observed during the past week. Highlight notable symptoms, frequency, severity trends, and any patterns. Be factual and brief in under 100 words.";
+    const prompt = `You are a health analyst. Write a concise summary of the user's symptoms and health patterns observed during the past week. Highlight notable symptoms, frequency, severity trends, and any patterns. Be factual and brief in under 50 words. ${SUMMARY_STYLE_RULES}`;
 
     try {
-      const summary = await callOpenAI(prompt, content, 120);
+      const summary = await callOpenAI(prompt, content, 95);
       const stats = computeStats(rows);
 
       const { error } = await supabase.from("health_summaries").insert({
@@ -227,10 +231,10 @@ async function main() {
 
     if (rollingRows && rollingRows.length > 0) {
       const content = rollingRows.map((r) => `[${r.local_date}] (severity: ${r.severity ?? "n/a"}) ${r.summary}`).join("\n");
-      const prompt = "You are a health analyst. Summarize the user's symptoms and health patterns since their last monthly report. Highlight recurring issues, severity changes, and anything noteworthy. Be concise in under 150 words.";
+      const prompt = `You are a health analyst. Summarize the user's symptoms and health patterns since their last monthly report. Highlight recurring issues, severity changes, and anything noteworthy. Be concise in under 80 words. ${SUMMARY_STYLE_RULES}`;
 
       try {
-        const summary = await callOpenAI(prompt, content, 220);
+        const summary = await callOpenAI(prompt, content, 130);
         const stats = computeStats(rollingRows);
 
         await supabase
